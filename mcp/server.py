@@ -21,6 +21,32 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("fastMCP")
 
+CONFIG_PATH = (Path(__file__).parent / "config.json").resolve()
+
+
+def load_settings() -> dict:
+    """Load persistent server settings from mcp/config.json."""
+    try:
+        if CONFIG_PATH.exists():
+            import json
+
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {"copperEnabled": False}
+
+
+def save_settings(settings: dict) -> None:
+    """Persist server settings to mcp/config.json."""
+    try:
+        import json
+
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    except Exception:
+        # Best-effort; swallow IO errors to avoid crashing the server
+        return
+
 def find_git_root(start_directory: Path) -> Optional[Path]:
     """Walk upward from start_directory to find a directory containing a .git folder.
 
@@ -116,6 +142,27 @@ def get_untracked_diffs(repo_root: Path) -> str:
     for path in list_untracked_files(repo_root):
         diffs.append(unified_diff_for_new_file(repo_root, path))
     return "\n".join(filter(None, diffs)).strip()
+
+
+@mcp.tool(
+    name="toggle_copper",
+    description=(
+        "Enable or disable Copper integration. When enabled, Copper-related actions should run"
+        " automatically after the agent finishes. Accepts a boolean 'enabled' argument."
+    ),
+)
+def toggle_copper(enabled: bool) -> str:
+    settings = load_settings()
+    settings["copperEnabled"] = bool(enabled)
+    save_settings(settings)
+    return f"Copper enabled: {settings['copperEnabled']}"
+
+
+@mcp.tool(name="get_settings", description="Return server settings including 'copperEnabled'.")
+def get_settings() -> str:
+    import json
+
+    return json.dumps(load_settings())
 
 
 @mcp.tool(
