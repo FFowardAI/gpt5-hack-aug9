@@ -217,36 +217,39 @@ def test_modification(
 
     normalized_related: list[str] = [p for p in (related_files or []) if isinstance(p, str)]
 
-    # Build payload for the web server's /api/generate endpoint
-    payload = {
-        "userMessage": user_message,
-        "modifiedFiles": normalized_modified,
-        "relatedFiles": normalized_related,
+    # Construct stdin JSON expected by TestGen/generate_unit_tests.py
+    unit_tests_input = {
+        "modification": {
+            "userMessage": user_message,
+            "modifiedFiles": normalized_modified,
+            "relatedFiles": normalized_related,
+        }
     }
 
-    if requests is None:
-        return (
-            "HTTP client not available. Install 'requests' in the MCP environment or run: "
-            "pip install -r mcp/requirements.txt"
-        )
+    # Run the unit test generator via subprocess and capture JSON
+    generator_path = (Path(__file__).parents[1] / "TestGen" / "generate_unit_tests.py").resolve()
 
-    url = build_api_url("/api/generate")
-    try:
-        resp = requests.post(url, json=payload, timeout=20)
-        status = resp.status_code
+    def run_generator(stdin_payload: dict) -> dict:
         try:
-            data = resp.json()
+            proc = subprocess.run(
+                [sys.executable, str(generator_path), "--stdin-json", "--count", "3"],
+                input=json.dumps(stdin_payload),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except Exception as exc:
+            return {"ok": False, "error": f"failed to start generator: {exc}"}
+
+        if proc.returncode != 0:
+            return {"ok": False, "error": proc.stderr.strip() or proc.stdout.strip()}
+        try:
+            return {"ok": True, "tests": json.loads(proc.stdout).get("tests", [])}
         except Exception:
-            data = {"text": resp.text[:1000]}
-        ack = {
-            "ok": status < 400,
-            "status": status,
-            "response": data,
-        }
-        return json.dumps(ack)
-    except Exception as exc:
-        err = {"ok": False, "error": str(exc), "url": url}
-        return json.dumps(err)
+            return {"ok": False, "error": proc.stdout[:1000]}
+
+    result = run_generator(unit_tests_input)
+    return json.dumps(result)
 
 
 if __name__ == "__main__":
