@@ -24,7 +24,7 @@ export interface GenerateRequestBody {
   relatedFiles: string[];
 }
 
-interface JobRecord {
+export interface JobRecord {
   id: string;
   status: JobStatus;
   createdAt: string;
@@ -112,54 +112,6 @@ app.post('/api/generate', async (req: Request, res: Response) => {
   }
 });
 
-// 2) Run Maestro for a generated flow (no-op until a flow is created elsewhere)
-app.post('/api/run', async (req: Request, res: Response) => {
-  const { jobId } = (req.body || {}) as { jobId?: string };
-  if (!jobId) return res.status(400).json({ error: 'jobId is required' });
-  const job = jobs.get(jobId);
-  if (!job) return res.status(404).json({ error: 'job not found' });
-  if (!job.flowPath) return res.status(400).json({ error: 'flow not generated' });
-
-  runMaestro(job).catch(() => {});
-  return res.json({ ok: true, message: 'Maestro started' });
-});
-
-// 3) Receive Maestro callback (webhook) with result
-app.post('/api/maestro/callback', async (req: Request, res: Response) => {
-  try {
-    const { jobId, success, summary, details } = (req.body || {}) as {
-      jobId?: string;
-      success?: boolean;
-      summary?: string;
-      details?: unknown;
-    };
-    if (!jobId) return res.status(400).json({ error: 'jobId is required' });
-    const job = jobs.get(jobId);
-    if (!job) return res.status(404).json({ error: 'job not found' });
-
-    const passed = Boolean(success);
-    job.status = passed ? 'passed' : 'failed';
-    job.result = { success: passed, summary: summary || '', details: details ?? null };
-    job.completedAt = new Date().toISOString();
-    jobs.set(jobId, job);
-
-    const notifyPayload = passed
-      ? { type: 'maestro_ok', jobId, message: 'All checks passed' }
-      : { type: 'maestro_failed', jobId, message: 'Checks failed', details };
-    await notifyMcp(notifyPayload);
-
-    return res.json({ ok: true });
-  } catch (error: any) {
-    return res.status(500).json({ error: error?.message ?? String(error) });
-  }
-});
-
-app.get('/api/jobs/:jobId', (req: Request, res: Response) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job) return res.status(404).json({ error: 'job not found' });
-  return res.json(job);
-});
-
 app.get('/api/health', (_: Request, res: Response) => res.json({ ok: true }));
 
 app.get('/', (_: Request, res: Response) => {
@@ -179,41 +131,6 @@ app.get('/', (_: Request, res: Response) => {
     </html>
   `);
 });
-
-function runMaestro(job: JobRecord) {
-  return new Promise<void>((resolve) => {
-    job.status = 'running';
-    jobs.set(job.id, job);
-
-    const args = ['test', job.flowPath as string];
-    const child = spawn(MAESTRO_BIN, args, {
-      cwd: MAESTRO_WORKSPACE,
-      shell: true,
-      env: process.env,
-    });
-
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (d) => (stdout += d.toString()));
-    child.stderr.on('data', (d) => (stderr += d.toString()));
-    child.on('close', async (code) => {
-      const success = code === 0;
-      job.status = success ? 'passed' : 'failed';
-      job.completedAt = new Date().toISOString();
-      job.result = { success, code, stdout, stderr };
-      jobs.set(job.id, job);
-
-      const details = { code, stdoutTail: stdout.slice(-4000), stderrTail: stderr.slice(-4000) };
-      await notifyMcp(
-        success
-          ? { type: 'maestro_ok', jobId: job.id, message: 'All checks passed' }
-          : { type: 'maestro_failed', jobId: job.id, message: 'Checks failed', details }
-      );
-
-      resolve();
-    });
-  });
-}
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
