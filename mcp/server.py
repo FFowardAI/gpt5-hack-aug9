@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import List, Optional
 import difflib
 from fastmcp import FastMCP
+import json
+
+try:
+    import requests
+except Exception:  # pragma: no cover
+    requests = None  # will error at use-time with friendly message
 
 mcp = FastMCP("fastMCP")
 
@@ -28,24 +34,30 @@ def load_settings() -> dict:
     """Load persistent server settings from mcp/config.json."""
     try:
         if CONFIG_PATH.exists():
-            import json
-
             return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except Exception:
         pass
-    return {"copperEnabled": False}
+    return {"copperEnabled": False, "apiBaseUrl": "http://localhost:5055"}
 
 
 def save_settings(settings: dict) -> None:
     """Persist server settings to mcp/config.json."""
     try:
-        import json
-
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     except Exception:
         # Best-effort; swallow IO errors to avoid crashing the server
         return
+
+
+def build_api_url(path: str) -> str:
+    settings = load_settings()
+    base = settings.get("apiBaseUrl") or "http://localhost:5055"
+    if base.endswith('/'):
+        base = base[:-1]
+    if not path.startswith('/'):
+        path = '/' + path
+    return base + path
 
 def find_git_root(start_directory: Path) -> Optional[Path]:
     """Walk upward from start_directory to find a directory containing a .git folder.
@@ -205,21 +217,36 @@ def test_modification(
 
     normalized_related: list[str] = [p for p in (related_files or []) if isinstance(p, str)]
 
-    summary_lines: list[str] = []
-    summary_lines.append("Received test generation context.")
-    summary_lines.append(f"User message length: {len(user_message)} characters")
-    summary_lines.append(f"Modified files: {len(normalized_modified)}")
-    summary_lines.append(f"Related files: {len(normalized_related)}")
+    # Build payload for the web server's /api/generate endpoint
+    payload = {
+        "userMessage": user_message,
+        "modifiedFiles": normalized_modified,
+        "relatedFiles": normalized_related,
+    }
 
-    # Include a brief listing to aid quick inspection, without dumping large diffs.
-    if normalized_modified:
-        sample_paths = ", ".join(m.get("path", "") for m in normalized_modified[:5])
-        summary_lines.append(f"Sample modified paths: {sample_paths}")
-    if normalized_related:
-        sample_related = ", ".join(normalized_related[:5])
-        summary_lines.append(f"Sample related paths: {sample_related}")
+    if requests is None:
+        return (
+            "HTTP client not available. Install 'requests' in the MCP environment or run: "
+            "pip install -r mcp/requirements.txt"
+        )
 
-    return "\n".join(summary_lines)
+    url = build_api_url("/api/generate")
+    try:
+        resp = requests.post(url, json=payload, timeout=20)
+        status = resp.status_code
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"text": resp.text[:1000]}
+        ack = {
+            "ok": status < 400,
+            "status": status,
+            "response": data,
+        }
+        return json.dumps(ack)
+    except Exception as exc:
+        err = {"ok": False, "error": str(exc), "url": url}
+        return json.dumps(err)
 
 
 if __name__ == "__main__":
