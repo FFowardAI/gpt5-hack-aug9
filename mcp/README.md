@@ -1,6 +1,12 @@
 Copper settings and command palette
 ----------------------------------
 
+to install the MCP server in cursor:
+
+1: uv pip install fastmcp
+
+2: fastmcp install cursor server.py
+
 This MCP server persists a simple setting in `mcp/config.json`:
 
 - `copperEnabled`: boolean
