@@ -275,11 +275,34 @@ def test_modification(
                 auto_files.append({"path": str(rel).replace("\\", "/"), "diff": diff_text or ""})
             normalized_modified = auto_files
 
+    # Convert paths to absolute (prepend project/repo root) for backend consumption
+    repo_root_for_abs = find_git_root(Path.cwd()) or Path.cwd()
+    normalized_modified_abs: list[dict] = []
+    for entry in normalized_modified:
+        path_str = entry.get("path", "")
+        try:
+            p = Path(path_str)
+            abs_p = p if p.is_absolute() else (repo_root_for_abs / p)
+            abs_norm = abs_p.resolve()
+            normalized_modified_abs.append({"path": str(abs_norm), "diff": entry.get("diff", "")})
+        except Exception:
+            # Fallback to original path if resolution fails
+            normalized_modified_abs.append({"path": path_str, "diff": entry.get("diff", "")})
+
+    normalized_related_abs: list[str] = []
+    for rf in normalized_related:
+        try:
+            rp = Path(rf)
+            abs_rp = rp if rp.is_absolute() else (repo_root_for_abs / rp)
+            normalized_related_abs.append(str(abs_rp.resolve()))
+        except Exception:
+            normalized_related_abs.append(rf)
+
     # Build payload for the web server's /api/generate endpoint
     payload = {
         "userMessage": user_message,
-        "modifiedFiles": normalized_modified,
-        "relatedFiles": normalized_related,
+        "modifiedFiles": normalized_modified_abs,
+        "relatedFiles": normalized_related_abs,
     }
 
     if requests is None:
