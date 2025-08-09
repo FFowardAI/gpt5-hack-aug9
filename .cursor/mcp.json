@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mcp-post-commit": {
+      "command": "node",
+      "args": [
+        "/Users/windows95/Coding/ai-tester/mcp-post-commit/index.mjs"
+      ],
+      "transport": "stdio"
+    }
+  }
+}
+

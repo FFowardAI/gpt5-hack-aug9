@@ -1,0 +1,21 @@
+# flows/a.yaml
+url: http://localhost:3000
+---
+- launchApp
+- waitForAnimationToEnd
+
+# Assert stable, unique texts
+- assertVisible: "Get Started Free"
+- assertVisible: "Learn More"
+- assertVisible: "Sign In"
+
+# Features
+- assertVisible: "Timeline View"
+- assertVisible: "Smart Tasks"
+- assertVisible: "Analytics"
+- assertVisible: "AI Chat"
+
+- takeScreenshot: home-hero
+- tapOn: "Get Started Free"
+- waitForAnimationToEnd
+- takeScreenshot: after-cta
