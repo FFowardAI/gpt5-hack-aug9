@@ -1,0 +1,35 @@
+{
+  // VS Code/Cursor tasks to toggle Copper via Command Palette (Cmd+Shift+P → Tasks: Run Task)
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Copper: Enable",
+      "type": "shell",
+      "command": "python3 /Users/igorrocha/Documents/Projects/gpt5-hack-aug9/mcp/toggle_copper.py --enable",
+      "presentation": {
+        "reveal": "silent"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Copper: Disable",
+      "type": "shell",
+      "command": "python3 /Users/igorrocha/Documents/Projects/gpt5-hack-aug9/mcp/toggle_copper.py --disable",
+      "presentation": {
+        "reveal": "silent"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Copper: Toggle",
+      "type": "shell",
+      "command": "python3 /Users/igorrocha/Documents/Projects/gpt5-hack-aug9/mcp/toggle_copper.py --toggle",
+      "presentation": {
+        "reveal": "silent"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
+
+
