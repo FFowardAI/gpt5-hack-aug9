@@ -156,6 +156,38 @@ def get_untracked_diffs(repo_root: Path) -> str:
     return "\n".join(filter(None, diffs)).strip()
 
 
+def list_changed_files(repo_root: Path) -> List[Path]:
+    """List files changed relative to HEAD (staged + unstaged), repository-relative paths.
+
+    Includes untracked files.
+    """
+    names_stdout = run_git_command(repo_root, ["diff", "--name-only", "HEAD"])
+    changed: set[Path] = set()
+    for line in names_stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        changed.add(Path(line))
+    for untracked in list_untracked_files(repo_root):
+        try:
+            changed.add(untracked.relative_to(repo_root))
+        except Exception:
+            # Should not happen, but ignore if relative_to fails
+            pass
+    return sorted(repo_root / p for p in changed)
+
+
+def per_file_diff(repo_root: Path, file_path: Path) -> str:
+    """Return unified diff for a single file relative to HEAD. Handles untracked files."""
+    # Determine if file is tracked by checking git ls-files --error-unmatch
+    rel = file_path.relative_to(repo_root)
+    tracked = run_git_command(repo_root, ["ls-files", "--error-unmatch", str(rel)]) != ""
+    if not tracked:
+        return unified_diff_for_new_file(repo_root, file_path)
+    # Diff against HEAD to include both staged and unstaged changes
+    return run_git_command(repo_root, ["diff", "--no-ext-diff", "HEAD", "--", str(rel)])
+
+
 @mcp.tool(
     name="toggle_copper",
     description=(
@@ -210,12 +242,38 @@ def test_modification(
     for entry in modified_files or []:
         if not isinstance(entry, dict):
             continue
-        path = entry.get("path")
-        diff = entry.get("diff")
-        if isinstance(path, str) and isinstance(diff, str):
-            normalized_modified.append({"path": path, "diff": diff})
+        # Accept multiple key names from different callers
+        path_val = (
+            entry.get("path")
+            or entry.get("target_file")
+            or entry.get("file")
+            or entry.get("filepath")
+        )
+        diff_val = entry.get("diff") or entry.get("patch") or entry.get("delta")
+        if isinstance(path_val, str):
+            # Ensure forward slashes in JSON
+            path_str = path_val.replace("\\", "/")
+            # Allow empty diff strings (some callers may omit real unified diffs)
+            if isinstance(diff_val, str):
+                normalized_modified.append({"path": path_str, "diff": diff_val})
+            else:
+                normalized_modified.append({"path": path_str, "diff": ""})
 
     normalized_related: list[str] = [p for p in (related_files or []) if isinstance(p, str)]
+
+    # If caller did not pass modified files, auto-detect from git
+    if not normalized_modified:
+        repo_root = find_git_root(Path.cwd())
+        if repo_root is not None:
+            auto_files: List[dict] = []
+            for abs_path in list_changed_files(repo_root):
+                try:
+                    rel = abs_path.relative_to(repo_root)
+                except Exception:
+                    rel = abs_path
+                diff_text = per_file_diff(repo_root, abs_path)
+                auto_files.append({"path": str(rel).replace("\\", "/"), "diff": diff_text or ""})
+            normalized_modified = auto_files
 
     # Build payload for the web server's /api/generate endpoint
     payload = {
