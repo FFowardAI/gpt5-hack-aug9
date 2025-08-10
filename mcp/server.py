@@ -214,8 +214,7 @@ def get_settings() -> str:
 @mcp.tool(
     name="test_modification",
     description=(
-        "Accepts context for test generation after an agent completes a change: the original user message,"
-        " a list of modified files with their diffs, and a list of related files. Should be called ALWAYS after the agent finishes its work"
+        "Submit modification context to start async test generation/execution. Returns a job id immediately."
     ),
 )
 def test_modification(
@@ -223,135 +222,104 @@ def test_modification(
     modified_files: list[dict],
     related_files: list[str],
 ) -> str:
-    """Receive modification context for downstream test generation.
+    """Start asynchronous test generation and execution on the local server.
 
-    Args:
-        user_message: The original user request that initiated the change.
-        modified_files: A list of objects describing modified files. Each object should include:
-            - path: Repository-relative file path.
-            - diff: Unified diff representing the modifications to that file.
-        related_files: Repository-relative paths to files directly influenced by this change or
-            otherwise useful for generating tests.
-
-    Returns:
-        A short acknowledgment summary suitable for logging/inspection.
+    Returns a JSON string with { ok, status, jobId }.
     """
     if not isinstance(user_message, str):
-        return "Invalid input: 'user_message' must be a string."
+        return json.dumps({"ok": False, "error": "user_message must be a string"})
 
-    # Normalize and lightly validate shapes; do not enforce strict schema to remain flexible.
+    # Normalize inputs
     normalized_modified: list[dict] = []
     for entry in modified_files or []:
         if not isinstance(entry, dict):
             continue
-        # Accept multiple key names from different callers
-        path_val = (
-            entry.get("path")
-            or entry.get("target_file")
-            or entry.get("file")
-            or entry.get("filepath")
-        )
-        diff_val = entry.get("diff") or entry.get("patch") or entry.get("delta")
+        path_val = entry.get("path") or entry.get("target_file") or entry.get("file") or entry.get("filepath")
+        diff_val = entry.get("diff") or entry.get("patch") or entry.get("delta") or ""
         if isinstance(path_val, str):
-            # Ensure forward slashes in JSON
-            path_str = path_val.replace("\\", "/")
-            # Allow empty diff strings (some callers may omit real unified diffs)
-            if isinstance(diff_val, str):
-                normalized_modified.append({"path": path_str, "diff": diff_val})
-            else:
-                normalized_modified.append({"path": path_str, "diff": ""})
+            normalized_modified.append({"path": path_val.replace("\\", "/"), "diff": diff_val})
 
     normalized_related: list[str] = [p for p in (related_files or []) if isinstance(p, str)]
 
-    # If caller did not pass modified files, auto-detect from git
-    if not normalized_modified:
-        repo_root = find_git_root(Path.cwd())
-        if repo_root is not None:
-            auto_files: List[dict] = []
-            for abs_path in list_changed_files(repo_root):
-                try:
-                    rel = abs_path.relative_to(repo_root)
-                except Exception:
-                    rel = abs_path
-                diff_text = per_file_diff(repo_root, abs_path)
-                auto_files.append({"path": str(rel).replace("\\", "/"), "diff": diff_text or ""})
-            normalized_modified = auto_files
-
-    # Convert paths to absolute (prepend project/repo root) for backend consumption
-    repo_root_for_abs = find_git_root(Path.cwd()) or Path.cwd()
-    normalized_modified_abs: list[dict] = []
-    for entry in normalized_modified:
-        path_str = entry.get("path", "")
-        try:
-            p = Path(path_str)
-            abs_p = p if p.is_absolute() else (repo_root_for_abs / p)
-            abs_norm = abs_p.resolve()
-            normalized_modified_abs.append({"path": str(abs_norm), "diff": entry.get("diff", "")})
-        except Exception:
-            # Fallback to original path if resolution fails
-            normalized_modified_abs.append({"path": path_str, "diff": entry.get("diff", "")})
-
-    normalized_related_abs: list[str] = []
+    # Convert to absolute paths for server consumption
+    repo_root = find_git_root(Path.cwd()) or Path.cwd()
+    abs_modified: list[dict] = []
+    for e in normalized_modified:
+        p = Path(e["path"])  # already normalized
+        abs_p = p if p.is_absolute() else (repo_root / p)
+        abs_modified.append({"path": str(abs_p.resolve()), "diff": e.get("diff", "")})
+    abs_related: list[str] = []
     for rf in normalized_related:
-        try:
-            rp = Path(rf)
-            abs_rp = rp if rp.is_absolute() else (repo_root_for_abs / rp)
-            normalized_related_abs.append(str(abs_rp.resolve()))
-        except Exception:
-            normalized_related_abs.append(rf)
+        rp = Path(rf)
+        abs_related.append(str((rp if rp.is_absolute() else (repo_root / rp)).resolve()))
 
-    # Build payload for the web server's /api/generate endpoint
     payload = {
         "userMessage": user_message,
-        "modifiedFiles": normalized_modified_abs,
-        "relatedFiles": normalized_related_abs,
+        "modifiedFiles": abs_modified,
+        "relatedFiles": abs_related,
+        "async": True,
     }
 
-    url = build_api_url("/api/generate-tests")
-    resp = requests.post(url, json=payload, timeout=API_TIMEOUT_SECONDS)
-    status = resp.status_code
+    url = build_api_url("/api/generate-tests?async=1")
     try:
-        data = resp.json()
-    except Exception:
-        data = {"text": resp.text[:1000]}
-    ack = {
-        "ok": status < 400,
-        "status": status,
-        "response": data,
-    }
-    # Construct stdin JSON expected by TestGen/generate_unit_tests.py
-    unit_tests_input = {
-        "modification": {
-            "userMessage": user_message,
-            "modifiedFiles": normalized_modified,
-            "relatedFiles": normalized_related,
-        }
-    }
-
-    # Run the unit test generator via subprocess and capture JSON
-    generator_path = (Path(__file__).parents[1] / "TestGen" / "generate_unit_tests.py").resolve()
-
-    def run_generator(stdin_payload: dict) -> dict:
+        # Short timeout so the tool returns under Cursor's 20s cap
+        resp = requests.post(url, json=payload, timeout=min(API_TIMEOUT_SECONDS, 10))
+        data = {}
         try:
-            proc = subprocess.run(
-                [sys.executable, str(generator_path), "--stdin-json", "--count", "3"],
-                input=json.dumps(stdin_payload),
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-        except Exception as exc:
-            return {"ok": False, "error": f"failed to start generator: {exc}"}
-
-        if proc.returncode != 0:
-            return {"ok": False, "error": proc.stderr.strip() or proc.stdout.strip()}
-        try:
-            return {"ok": True, "tests": json.loads(proc.stdout).get("tests", [])}
+            data = resp.json()
         except Exception:
-            return {"ok": False, "error": proc.stdout[:1000]}
+            data = {"text": resp.text[:500]}
+        return json.dumps({
+            "ok": resp.status_code < 400,
+            "status": resp.status_code,
+            "jobId": data.get("jobId"),
+            "server": data,
+        })
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"failed to start job: {exc}"})
 
-    result = run_generator(unit_tests_input)
-    return json.dumps(result)
+
+@mcp.tool(
+    name="get_job_status",
+    description="Poll job status from the local server. Returns {id, status, result?, error?}."
+)
+def get_job_status(job_id: str) -> str:
+    url = build_api_url(f"/api/job/{job_id}")
+    try:
+        resp = requests.get(url, timeout=min(API_TIMEOUT_SECONDS, 8))
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"text": resp.text[:500]}
+        return json.dumps({
+            "ok": resp.status_code < 400,
+            "status": resp.status_code,
+            "job": data,
+        })
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": f"failed to get status: {exc}"})
+
+
+@mcp.tool(
+    name="wait_job_step",
+    description=(
+        "Poll a job for up to step_seconds (<= 8s) to stay under tool time limits. "
+        "Returns the latest status. Call repeatedly until status is 'generated'/'passed'/'failed'."
+    ),
+)
+def wait_job_step(job_id: str, step_seconds: int = 8) -> str:
+    import time
+    step_seconds = max(1, min(8, int(step_seconds)))
+    deadline = time.time() + step_seconds
+    last = None
+    while time.time() < deadline:
+        last = json.loads(get_job_status(job_id))
+        job = (last or {}).get("job", {})
+        status = job.get("status")
+        if status in {"generated", "passed", "failed"}:
+            break
+        time.sleep(1)
+    return json.dumps(last or {"ok": False, "error": "no status"})
 
 
 if __name__ == "__main__":

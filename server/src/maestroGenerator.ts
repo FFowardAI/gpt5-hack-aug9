@@ -110,14 +110,14 @@ function buildPrompt(
     '- Use concise, distinctive text that uniquely identifies UI elements\n' +
     '- Prefer shorter text snippets that are likely to remain stable\n'
   );
-  
+
   // Include command documentation if available
   if (commandsDocumentation) {
     parts.push('\n## Available Maestro Commands Reference:\n');
     parts.push(commandsDocumentation);  // No truncation - send complete documentation
     parts.push('\n');
   }
-  
+
   parts.push(`\nUser message:\n${userMessage}\n`);
   parts.push(`\nChanged files (paths):\n${changedList}\n`);
 

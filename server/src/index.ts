@@ -13,7 +13,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 
 // In-memory job store (replace with DB if needed)
-type JobStatus = 'received' | 'generated' | 'running' | 'passed' | 'failed';
+type JobStatus = 'received' | 'queued' | 'running' | 'generated' | 'passed' | 'failed';
 
 export interface ModifiedFile {
   path: string;
@@ -324,6 +324,7 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
     const userMessage = body?.userMessage;
     const modifiedFiles = body?.modifiedFiles;
     const relatedFiles = body?.relatedFiles;
+    const isAsync = req.query.async === '1' || (body as any)?.async === true;
 
     if (typeof userMessage !== 'string' || userMessage.length === 0) {
       return res.status(400).json({ error: 'userMessage must be a non-empty string' });
@@ -344,7 +345,7 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
 
     const record: JobRecord = {
       id: jobId,
-      status: 'received',
+      status: isAsync ? 'queued' : 'received',
       createdAt: new Date().toISOString(),
       flowPath: null,
       cursorTask: null,
@@ -353,59 +354,85 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
       result: null,
       error: null,
     };
+    jobs.set(jobId, record);
 
     console.log('received modification context', JSON.stringify(record, null, 2));
 
-    // Generate Maestro tests using the new TS generator
-    const generatedTests = await generateUnitTests({
-      userMessage,
-      modifiedFiles,
-      relatedFiles,
-      count: 1,
-    });
+    const runJob = async () => {
+      try {
+        jobs.set(jobId, { ...record, status: 'running' });
 
-    console.log('generated tests', generatedTests);
+        // Generate Maestro tests using the new TS generator
+        const generatedTests = await generateUnitTests({
+          userMessage: userMessage as string,
+          modifiedFiles: modifiedFiles as ModifiedFile[],
+          relatedFiles: relatedFiles as string[],
+          count: 1,
+        });
 
-    // Persist generated tests to YAML files
-    const flowFilePaths = writeMaestroFlows(generatedTests.tests, {
-      directory: MAESTRO_FLOW_DIR,
-      jobId,
-    });
+        console.log('generated tests', generatedTests);
 
-    // Run Maestro tests with retry logic
-    const finalResults = await runTestsWithRetry({
-      userMessage,
-      modifiedFiles,
-      relatedFiles,
-      jobId,
-      initialTests: generatedTests.tests,
-      initialFiles: flowFilePaths,
-      maestroBin: MAESTRO_BIN,
-      workspace: MAESTRO_WORKSPACE,
-      maxRetries: 5
-    });
+        // Persist generated tests to YAML files
+        const flowFilePaths = writeMaestroFlows(generatedTests.tests, {
+          directory: MAESTRO_FLOW_DIR,
+          jobId,
+        });
 
-    const responsePayload = {
-      jobId,
-      tests: finalResults.tests,
-      files: finalResults.files,
-      results: finalResults.results,
-      meta: {
-        ...generatedTests.meta,
-        generated: finalResults.tests.length,
-        retries: finalResults.retryCount,
-        finalAttempt: finalResults.retryCount + 1
-      },
+        // Run Maestro tests with retry logic
+        const finalResults = await runTestsWithRetry({
+          userMessage: userMessage as string,
+          modifiedFiles: modifiedFiles as ModifiedFile[],
+          relatedFiles: relatedFiles as string[],
+          jobId,
+          initialTests: generatedTests.tests,
+          initialFiles: flowFilePaths,
+          maestroBin: MAESTRO_BIN,
+          workspace: MAESTRO_WORKSPACE,
+          maxRetries: 5
+        });
+
+        const responsePayload = {
+          jobId,
+          tests: finalResults.tests,
+          files: finalResults.files,
+          results: finalResults.results,
+          meta: {
+            ...generatedTests.meta,
+            generated: finalResults.tests.length,
+            retries: finalResults.retryCount,
+            finalAttempt: finalResults.retryCount + 1
+          },
+        };
+
+        jobs.set(jobId, { ...record, status: 'generated', result: responsePayload });
+      } catch (err: any) {
+        jobs.set(jobId, { ...record, status: 'failed', error: err?.message ?? String(err) });
+      }
     };
 
-    jobs.set(jobId, { ...record, status: 'generated', result: responsePayload });
-    return res.json(responsePayload);
+    if (isAsync) {
+      // Kick off in background and respond immediately
+      setImmediate(runJob);
+      return res.json({ jobId, status: 'queued' });
+    }
+
+    await runJob();
+    const finished = jobs.get(jobId);
+    return res.json(finished?.result ?? { jobId, status: finished?.status || 'failed' });
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? String(error) });
   }
 });
 
 app.get('/api/health', (_: Request, res: Response) => res.json({ ok: true }));
+
+// Job status endpoint for async polling
+app.get('/api/job/:id', (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const record = jobs.get(id);
+  if (!record) return res.status(404).json({ error: 'job not found', id });
+  return res.json({ id, status: record.status, result: record.result, error: record.error });
+});
 
 // Simple route to manually run a specific Maestro flow by file name
 // Example:
