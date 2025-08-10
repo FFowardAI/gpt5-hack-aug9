@@ -24,6 +24,7 @@ export interface MaestroResult extends MaestroStatus {
   duration: number;
   stdout: string;
   stderr: string;
+  debugDir?: string;
 }
 
 /**
@@ -31,7 +32,7 @@ export interface MaestroResult extends MaestroStatus {
  * Monitors test execution every 1 second and returns complete results
  */
 export async function runMaestro(
-  yamlFilePath: string, 
+  yamlFilePath: string,
   options: MaestroRunOptions = {}
 ): Promise<MaestroResult> {
   const {
@@ -43,7 +44,7 @@ export async function runMaestro(
 
   return new Promise((resolve, reject) => {
     console.log(`🚀 Starting Maestro test: ${yamlFilePath}`);
-    
+
     if (!fs.existsSync(yamlFilePath)) {
       return reject(new Error(`Test file not found: ${yamlFilePath}`));
     }
@@ -52,28 +53,52 @@ export async function runMaestro(
     let stdout = '';
     let stderr = '';
     let isComplete = false;
-    let lastStatus: MaestroStatus = { 
-      flowName: 'Unknown', 
-      passed: 0, 
-      failed: 0, 
-      skipped: 0, 
-      isRunning: true 
+    let lastStatus: MaestroStatus = {
+      flowName: 'Unknown',
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      isRunning: true
     };
 
-    // Start Maestro process
-    const child: ChildProcess = spawn(maestroBin, ['test', yamlFilePath], {
+    // Create debug output directory
+    const debugDir = path.join(workspace, 'maestro-debug', `test-${Date.now()}`);
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+
+    // Start Maestro process with headless and debug options
+    const maestroArgs = [
+      'test',
+      '--headless',
+      '--format', 'HTML',
+      '--debug-output', debugDir,
+      '--flatten-debug-output',
+      yamlFilePath
+    ];
+
+    console.log(`🔧 Maestro command: ${maestroBin} ${maestroArgs.join(' ')}`);
+    console.log(`🗂️  Debug output will be saved to: ${debugDir}`);
+
+    const child: ChildProcess = spawn(maestroBin, maestroArgs, {
       cwd: workspace,
-      shell: true,
-      env: process.env,
+      shell: false, // Use shell: false for better security
+      env: { ...process.env, MAESTRO_CLI_LOG_LEVEL: 'DEBUG' },
     });
 
-    // Capture output
+    // Capture output with real-time logging
     child.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
+      const output = data.toString();
+      stdout += output;
+      // Log stdout in real-time for debugging
+      console.log(`[MAESTRO-STDOUT] ${output.trim()}`);
     });
 
     child.stderr?.on('data', (data: Buffer) => {
-      stderr += data.toString();
+      const output = data.toString();
+      stderr += output;
+      // Log stderr in real-time for debugging
+      console.log(`[MAESTRO-STDERR] ${output.trim()}`);
     });
 
     // Monitor progress every second
@@ -84,7 +109,7 @@ export async function runMaestro(
       }
 
       const currentStatus = parseRealTimeStatus(stdout, stderr);
-      
+
       // Only log if status changed
       if (JSON.stringify(currentStatus) !== JSON.stringify(lastStatus)) {
         console.log(`📊 Progress: ✅${currentStatus.passed} ❌${currentStatus.failed} 🔲${currentStatus.skipped} | Flow: ${currentStatus.flowName}`);
@@ -112,23 +137,40 @@ export async function runMaestro(
     child.on('close', (code: number | null) => {
       isComplete = true;
       clearInterval(progressMonitor);
-      
+
       const duration = Date.now() - startTime;
       const finalStatus = parseFinalStatus(stdout, stderr, code || -1);
-      
+
       console.log(`🏁 Test completed in ${duration}ms`);
       console.log(`📋 Final result: ${finalStatus.success ? '✅ PASSED' : '❌ FAILED'}`);
       console.log(`📊 Steps: ✅${finalStatus.passed} ❌${finalStatus.failed} 🔲${finalStatus.skipped}`);
-      
-      if (!finalStatus.success && finalStatus.errorMessage) {
-        console.log(`🚨 Error: ${finalStatus.errorMessage}`);
+      console.log(`🔧 Exit code: ${code}`);
+
+      if (!finalStatus.success) {
+        console.log(`🚨 Error: ${finalStatus.errorMessage || 'No specific error message'}`);
+        console.log(`📄 Full STDOUT:\n${stdout}`);
+        console.log(`📄 Full STDERR:\n${stderr}`);
+
+        // List debug files if they exist
+        try {
+          const debugFiles = fs.readdirSync(debugDir);
+          if (debugFiles.length > 0) {
+            console.log(`🗂️  Debug files created:`);
+            debugFiles.forEach(file => {
+              console.log(`   - ${path.join(debugDir, file)}`);
+            });
+          }
+        } catch (e) {
+          console.log(`🗂️  Debug directory: ${debugDir} (may not contain files)`);
+        }
       }
 
       resolve({
         ...finalStatus,
         duration,
         stdout,
-        stderr
+        stderr,
+        debugDir
       });
     });
 
@@ -147,7 +189,7 @@ export async function runMaestro(
  */
 export function writeMaestroFlows(
   tests: string[],
-  options: { directory: string; jobId?: string; filePrefix?: string } 
+  options: { directory: string; jobId?: string; filePrefix?: string }
 ): string[] {
   const { directory, jobId, filePrefix } = options;
   if (!fs.existsSync(directory)) {
@@ -205,7 +247,7 @@ export async function runMultipleMaestroTests(
  */
 function parseRealTimeStatus(stdout: string, stderr: string): MaestroStatus {
   const output = stdout + stderr;
-  
+
   // Parse flow name
   let flowName = 'Unknown';
   const flowMatch = output.match(/> Flow[:\s]+(.+)/i);
@@ -216,7 +258,7 @@ function parseRealTimeStatus(stdout: string, stderr: string): MaestroStatus {
   // Count completed steps from real-time output
   const completedSteps = (output.match(/COMPLETED/g) || []).length;
   const failedSteps = (output.match(/FAILED/g) || []).length;
-  
+
   return {
     flowName,
     passed: completedSteps,
@@ -232,7 +274,7 @@ function parseRealTimeStatus(stdout: string, stderr: string): MaestroStatus {
 function parseFinalStatus(stdout: string, stderr: string, exitCode: number): Omit<MaestroResult, 'duration' | 'stdout' | 'stderr'> {
   const output = stdout + stderr;
   const success = exitCode === 0;
-  
+
   // Parse flow name
   let flowName = 'Unknown';
   const flowMatch = output.match(/> Flow[:\s]+(.+)/i);
@@ -259,12 +301,12 @@ function parseFinalStatus(stdout: string, stderr: string, exitCode: number): Omi
   let errorMessage = '';
   if (!success) {
     const lines = output.split('\n');
-    const errorStartIndex = lines.findIndex(line => 
-      line.includes('Element not found') || 
+    const errorStartIndex = lines.findIndex(line =>
+      line.includes('Element not found') ||
       line.includes('FAILED') ||
       line.includes('not found')
     );
-    
+
     if (errorStartIndex >= 0) {
       const errorLines = lines.slice(errorStartIndex, errorStartIndex + 3)
         .filter(line => line.trim() && !line.includes('===='))
@@ -288,7 +330,7 @@ function parseFinalStatus(stdout: string, stderr: string, exitCode: number): Omi
 // Test the function
 async function testRunner(): Promise<void> {
   console.log('🧪 Testing TypeScript Maestro Runner\n');
-  
+
   const testFiles: string[] = [
     '/Users/windows95/Coding/ai-tester/a.yaml',
     '/Users/windows95/Coding/ai-tester/beff.yaml'

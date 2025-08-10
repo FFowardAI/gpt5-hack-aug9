@@ -72,22 +72,21 @@ function buildPrompt(
     : '- (none)';
 
   const examples = [
-    'url: "http://localhost:3000"',
+    'appId: "http://localhost:3000"',
     '---',
+    '- launchApp',
+    '- waitForAnimationToEnd',
     '- tapOn: "Login"',
     '- inputText: "username"',
-    '- inputText: "password"',
     '- assertVisible: "Welcome"',
-    '',
-    '- tapOn:',
-    '  id: "login_button"',
+    '- takeScreenshot: login_success',
   ].join('\n');
 
   const parts: string[] = [];
   parts.push(
-    'Call the maestro_yaml_grammar tool to generate ONE Maestro YAML test flow. ' +
-      'Strictly conform to the grammar. Use DOUBLE QUOTES for all strings. ' +
-      "Do NOT emit 'tapOn:' without an immediate indented line containing either 'id:' or 'text:'.\n"
+    'Call the maestro_yaml_grammar tool to generate ONE Maestro YAML test flow for WEB TESTING. ' +
+    'Strictly conform to the grammar. Use DOUBLE QUOTES for strings where needed. ' +
+    'Start with appId: "http://localhost:5173" and include "- launchApp" and "- waitForAnimationToEnd" after the --- separator.\n'
   );
   parts.push(`\nUser message:\n${userMessage}\n`);
   parts.push(`\nChanged files (paths):\n${changedList}\n`);
@@ -110,14 +109,10 @@ function buildPrompt(
   parts.push('\nFollow these patterns exactly (indentation and quoting):\n' + examples);
   parts.push(
     '\nCRITICAL FORMATTING RULES:\n' +
-      '- Use double-quoted strings for ALL text and file paths.\n' +
-      "- Include the url header and the '---' separator.\n" +
-      '- For commands with parameters, choose ONE format:\n' +
-      '  * Simple: \"tapOn: \"text\"\" (one line)\n' +
-      '  * Map: \"tapOn:\" NEWLINE \"  id: \"...\"\" (2-space indent)\n' +
-      "- NEVER use 'tapOn:' alone without immediate content\n" +
-      '- takeScreenshot requires map form: \"takeScreenshot:\" NEWLINE \"  name: \"...\"\"\n' +
-      "- If using conditions, use 'when:' followed by 4-space indented lines.\n"
+    '- Prefer single-line commands.\n' +
+    '- tapOn MUST be: "tapOn: "TEXT"" (single line). Do NOT use map form.\n' +
+    '- takeScreenshot MUST be single-line: "takeScreenshot: name" (no quotes preferred).\n' +
+    '- For mapped commands (pressKey, scroll, swipe, runFlow, runScript), use a newline after the colon and 2-space indentation.\n'
   );
 
   return parts.join('');

@@ -1,5 +1,10 @@
-start: "appId:" SP STRING NL SEP NL steps
-SEP: "---"  
+// Maestro YAML (web focused) – strict, GPT-5 friendly grammar
+// Accepts either url: or appId: header. Encourages simple one-line commands.
+
+start: header NL SEP NL steps
+header: ("url:" SP URL) | ("appId:" SP STRING)
+SEP: "---"
+
 steps: step (step)* (NL)?
 step: "-" SP command NL?
 
@@ -9,56 +14,44 @@ command: "launchApp"
        | "waitForAnimationToEnd"
        | "clearState"
        | "clearKeychain"
-       | "takeScreenshot"
-       | "tapOn:" SP STRING
+       | "tapOn:" SP STRING              // Simple string form only
        | "inputText:" SP STRING
        | "assertVisible:" SP STRING
        | "assertNotVisible:" SP STRING
        | "openLink:" SP STRING
-       | tap_on_map
+       | take_screenshot_simple          // takeScreenshot: "name" (one line)
        | press_key_map
        | erase_text_map
        | scroll_map
        | swipe_map
-       | take_screenshot_map
        | run_flow_map
        | run_script_map
 
-ind2: SP2 | SP4
+// Maps that remain accepted (with 2-space indentation)
+press_key_map: "pressKey:" NL SP2 "key:" SP KEY
 
-tap_on_map: "tapOn:" NL ind2 selector_kv (NL ind2 tap_on_any_kv)* (NL)?
-tap_on_any_kv: selector_kv | tap_on_extra_kv
-selector_kv: "id:" SP STRING | "text:" SP STRING
-tap_on_extra_kv: "index:" SP INT | "optional:" SP BOOL | "timeoutMs:" SP INT
+erase_text_map: "eraseText:" NL SP2 "characters:" SP INT
 
-press_key_map: "pressKey:" NL ind2 "key:" SP KEY
+scroll_map: "scroll:" NL SP2 "direction:" SP DIRECTION (NL SP2 "times:" SP INT)?
 
-erase_text_map: "eraseText:" NL ind2 "characters:" SP INT
+swipe_map: "swipe:" NL SP2 "direction:" SP DIRECTION (NL SP2 "durationMs:" SP INT)?
 
-scroll_map: "scroll:" NL ind2 "direction:" SP DIRECTION (NL ind2 "times:" SP INT)?
+run_flow_map: "runFlow:" NL SP2 "file:" SP PATH
 
-swipe_map: "swipe:" NL ind2 "direction:" SP DIRECTION (NL ind2 "durationMs:" SP INT)?
+run_script_map: "runScript:" NL SP2 "file:" SP PATH
 
-take_screenshot_map: "takeScreenshot:" NL ind2 "name:" SP STRING
+// Screenshot must be single-line (matches working example in a.yaml)
+take_screenshot_simple: "takeScreenshot:" SP (STRING | NAME)
 
-nl4: NL SP4
-when_block: "when:" NL SP4 condition_kv (nl4 condition_kv)* NL
-
-run_flow_map: "runFlow:" NL ind2 when_block? ind2 "file:" SP PATH
-
-run_script_map: "runScript:" NL ind2 when_block? ind2 "file:" SP PATH
-
-condition_kv: "visible:" SP STRING
-            | "notVisible:" SP STRING
-            | "platform:" SP PLATFORM
-            | "true:" SP STRING
-
+// Common tokens
 SP: " "
 SP2: "  "
 SP4: "    "
 NL: /\r?\n/
 STRING: /"[^"\n]{1,200}"/
+URL: /[^\s\n]+/
 PATH: STRING
+NAME: /[A-Za-z0-9_\-]{1,100}/
 INT: /[0-9]{1,6}/
 BOOL: "true" | "false"
 DIRECTION: "up" | "down" | "left" | "right"
