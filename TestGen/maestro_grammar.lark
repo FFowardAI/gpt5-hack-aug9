@@ -2,20 +2,57 @@ start: "appId:" SP STRING NL SEP NL steps
 SEP: "---"  
 steps: step (step)* (NL)?
 step: "-" SP command NL?
-command: "launchApp" | "back" | "hideKeyboard" | "waitForAnimationToEnd" | "clearState" | "clearKeychain" | "takeScreenshot" | "tapOn:" SP STRING | "inputText:" SP STRING | "assertVisible:" SP STRING | "assertNotVisible:" SP STRING | "openLink:" SP STRING | tap_on_map | press_key_map | erase_text_map | scroll_map | swipe_map | take_screenshot_map | run_flow_map | run_script_map
-tap_on_map: "tapOn:" NL SP2 selector_kv
+
+command: "launchApp"
+       | "back"
+       | "hideKeyboard"
+       | "waitForAnimationToEnd"
+       | "clearState"
+       | "clearKeychain"
+       | "takeScreenshot"
+       | "tapOn:" SP STRING
+       | "inputText:" SP STRING
+       | "assertVisible:" SP STRING
+       | "assertNotVisible:" SP STRING
+       | "openLink:" SP STRING
+       | tap_on_map
+       | press_key_map
+       | erase_text_map
+       | scroll_map
+       | swipe_map
+       | take_screenshot_map
+       | run_flow_map
+       | run_script_map
+
+ind2: SP2 | SP4
+
+tap_on_map: "tapOn:" NL ind2 selector_kv (NL ind2 tap_on_any_kv)* (NL)?
+tap_on_any_kv: selector_kv | tap_on_extra_kv
 selector_kv: "id:" SP STRING | "text:" SP STRING
-press_key_map: "pressKey:" NL SP2 "key:" SP KEY
-erase_text_map: "eraseText:" NL SP2 "characters:" SP INT
-scroll_map: "scroll:" NL SP2 "direction:" SP DIRECTION
-swipe_map: "swipe:" NL SP2 "direction:" SP DIRECTION
-take_screenshot_map: "takeScreenshot:" NL SP2 "name:" SP STRING
-run_flow_map: "runFlow:" NL SP2 "file:" SP PATH
-run_script_map: "runScript:" NL SP2 "file:" SP PATH
+tap_on_extra_kv: "index:" SP INT | "optional:" SP BOOL | "timeoutMs:" SP INT
+
+press_key_map: "pressKey:" NL ind2 "key:" SP KEY
+
+erase_text_map: "eraseText:" NL ind2 "characters:" SP INT
+
+scroll_map: "scroll:" NL ind2 "direction:" SP DIRECTION (NL ind2 "times:" SP INT)?
+
+swipe_map: "swipe:" NL ind2 "direction:" SP DIRECTION (NL ind2 "durationMs:" SP INT)?
+
+take_screenshot_map: "takeScreenshot:" NL ind2 "name:" SP STRING
+
+nl4: NL SP4
+when_block: "when:" NL SP4 condition_kv (nl4 condition_kv)* NL
+
+run_flow_map: "runFlow:" NL ind2 when_block? ind2 "file:" SP PATH
+
+run_script_map: "runScript:" NL ind2 when_block? ind2 "file:" SP PATH
+
 condition_kv: "visible:" SP STRING
             | "notVisible:" SP STRING
             | "platform:" SP PLATFORM
             | "true:" SP STRING
+
 SP: " "
 SP2: "  "
 SP4: "    "
