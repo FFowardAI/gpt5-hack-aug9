@@ -30,26 +30,7 @@ jobs:
             echo "has_changes=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Push images to preview branch (for inline display)
-        if: steps.check_changes.outputs.has_changes == 'true'
-        run: |
-          # Create a preview branch with images (not LFS) for inline display
-          PREVIEW_BRANCH="pr-preview-${{ github.event.number }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Create/checkout preview branch
-          git checkout -B "$PREVIEW_BRANCH"
-          
-          # Copy images to preview location (bypass LFS)
-          mkdir -p qa/preview/baselines qa/preview/generated
-          cp -r qa/baselines/* qa/preview/baselines/ 2>/dev/null || true
-          cp -r qa/generated/* qa/preview/generated/ 2>/dev/null || true
-          
-          # Add without LFS
-          git add qa/preview/
-          git commit -m "Preview images for PR #${{ github.event.number }}" || true
-          git push origin "$PREVIEW_BRANCH" --force
+      # No need to push preview branch - we'll use the existing branch URLs
 
       - name: Post PR comment with visual diff
         if: steps.check_changes.outputs.has_changes == 'true'
@@ -82,10 +63,9 @@ jobs:
                   
                   imagesList += `### ${file}\n\n`;
                   
-                  // Create URLs for inline image display from preview branch
-                  const previewBranch = `pr-preview-${context.issue.number}`;
-                  const baselineUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${previewBranch}/qa/preview/baselines/${file}`;
-                  const generatedUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${previewBranch}/qa/preview/generated/${file}`;
+                  // Use media.githubusercontent.com URLs for private repos with LFS
+                  const baselineUrl = `https://media.githubusercontent.com/media/${context.repo.owner}/${context.repo.repo}/refs/heads/main/qa/baselines/${file}`;
+                  const generatedUrl = `https://media.githubusercontent.com/media/${context.repo.owner}/${context.repo.repo}/refs/heads/${context.payload.pull_request.head.ref}/qa/generated/${file}`;
                   
                   imagesList += `**Before (baseline):**\n`;
                   imagesList += `![baseline](${baselineUrl})\n\n`;
