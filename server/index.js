@@ -4,6 +4,8 @@ const express = require('express');
 const morgan = require('morgan');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const OpenAI = require('openai');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -18,6 +20,17 @@ const MAESTRO_BIN = process.env.MAESTRO_BIN || 'maestro';
 const MAESTRO_WORKSPACE = process.env.MAESTRO_WORKSPACE || path.resolve(process.cwd());
 const MAESTRO_FLOW_DIR = process.env.MAESTRO_FLOW_DIR || path.join(MAESTRO_WORKSPACE, 'maestro-flows');
 const MCP_WEBHOOK_URL = process.env.MCP_WEBHOOK_URL || ''; // optional
+
+// OpenAI configuration (lazy initialization)
+let openai = null;
+function getOpenAI() {
+  if (!openai && process.env.OPENAI_API_KEY) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+}
 
 function ensureDirExists(dir) {
   if (!fs.existsSync(dir)) {
@@ -37,6 +50,72 @@ function buildFlowYaml({ title, description, steps }) {
   ].join('\n');
   const stepsYaml = (steps || []).map((s) => `- ${s}`).join('\n');
   return `${header}\n${stepsYaml}\n`;
+}
+
+async function analyzeFailureWithAI(job) {
+  if (!process.env.OPENAI_API_KEY) {
+    console.log('[ai-tester] OpenAI API key not configured, skipping AI analysis');
+    return null;
+  }
+
+  try {
+    const { result, flowPath } = job;
+    const flowContent = fs.existsSync(flowPath) ? fs.readFileSync(flowPath, 'utf8') : 'Flow file not found';
+    
+    const prompt = `You are reviewing test results and something failed. Based on the results, create a short list of tasks for the dev to fix it.
+
+**Test Flow File:**
+\`\`\`yaml
+${flowContent}
+\`\`\`
+
+**Test Results:**
+- Flow Name: ${result?.parsed?.flowName || 'Unknown'}
+- Exit Code: ${result?.exitCode || 'Unknown'}
+- Passed Steps: ${result?.parsed?.passedSteps || 0}
+- Failed Steps: ${result?.parsed?.failedSteps || 0}
+- Skipped Steps: ${result?.parsed?.skippedSteps || 0}
+
+**Error Details:**
+${result?.parsed?.errorMessage || 'No specific error message'}
+
+**Raw Output:**
+\`\`\`
+${result?.stdout || 'No stdout'}
+\`\`\`
+
+Please provide a concise list of actionable tasks for the developer to fix this issue.`;
+
+    console.log('[ai-tester] Analyzing failure with OpenAI...');
+    const openaiClient = getOpenAI();
+    if (!openaiClient) {
+      throw new Error('OpenAI client not initialized');
+    }
+    
+    const completion = await openaiClient.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a helpful QA engineer analyzing test failures. Provide clear, actionable tasks for developers.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      max_tokens: 500,
+      temperature: 0.3
+    });
+
+    const analysis = completion.choices[0]?.message?.content;
+    console.log('[ai-tester] AI Analysis completed');
+    return analysis;
+
+  } catch (error) {
+    console.error('[ai-tester] OpenAI analysis failed:', error.message);
+    return null;
+  }
 }
 
 async function notifyMcp(payload) {
@@ -378,12 +457,23 @@ function runMaestro(job) {
       } else {
         console.log(`[ai-tester] ❌ Flow "${parsed.flowName}" failed (${parsed.passedSteps} passed, ${parsed.failedSteps} failed)`);
         console.log(`[ai-tester] Error: ${parsed.errorMessage}`);
+        
+        // Get AI analysis for failed tests
+        const aiAnalysis = await analyzeFailureWithAI(job);
+        
+        // Update job with AI analysis
+        if (aiAnalysis) {
+          job.result.aiAnalysis = aiAnalysis;
+          jobs.set(job.id, job);
+        }
+        
         await notifyMcp({
           type: 'maestro_failed',
           jobId: job.id,
           message: `Flow "${parsed.flowName}" failed`,
           error: parsed.errorMessage,
           stats: { passed: parsed.passedSteps, failed: parsed.failedSteps, skipped: parsed.skippedSteps },
+          aiAnalysis: aiAnalysis,
           cursorTask: job.cursorTask
         });
       }

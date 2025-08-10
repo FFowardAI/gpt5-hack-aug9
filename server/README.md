@@ -1,6 +1,30 @@
 ## AI Tester Server
 
-Local Node.js server exposing three endpoints to integrate with MCP and Maestro.
+Local Node.js server exposing three endpoints to integrate with MCP and Maestro, with OpenAI-powered failure analysis.
+
+### Setup
+
+1. Create a `.env` file in the project root (`/Users/windows95/Coding/ai-tester/.env`):
+
+```bash
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Server Configuration (optional)
+PORT=5055
+MAESTRO_BIN=maestro
+MAESTRO_WORKSPACE=
+MAESTRO_FLOW_DIR=
+MCP_WEBHOOK_URL=
+```
+
+2. Install dependencies and start:
+
+```bash
+cd server
+npm install
+npm start
+```
 
 ### Endpoints
 
@@ -24,6 +48,17 @@ Local Node.js server exposing three endpoints to integrate with MCP and Maestro.
 
 - GET `/api/health`
   - Healthcheck.
+
+### AI Analysis Feature
+
+When tests fail, the server automatically:
+1. Sends test results, error messages, and flow content to OpenAI GPT-4
+2. Gets AI-generated actionable tasks for developers
+3. Includes AI analysis in MCP notifications and job results
+
+**AI Analysis is included in:**
+- MCP webhook payload: `{ aiAnalysis: "task list from AI" }`
+- Job results: `GET /api/jobs/:id` returns `result.aiAnalysis`
 
 ### Environment
 
