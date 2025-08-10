@@ -1,6 +1,7 @@
 start: "appId:" SP STRING NL SEP NL steps
 SEP: "---"  
-steps: step (step)* (NL)?
+steps: first_step (step)* (NL)?
+first_step: "-" SP "launchApp" NL?
 step: "-" SP command NL?
 
 command: "launchApp"

@@ -14,6 +14,7 @@ def test_minimal_tap_and_assert():
     s = (
         'appId: "com.example.app"\n'
         '---\n'
+        '- launchApp\n'
         '- tapOn: "Login"\n'
         '- assertVisible: "Welcome"\n'
     )
@@ -24,6 +25,7 @@ def test_mapping_tap_by_id_with_extras():
     s = (
         'appId: "com.example.app"\n'
         '---\n'
+        '- launchApp\n'
         '- tapOn:\n'
         '  id: "login_button"\n'
         '  index: 0\n'
@@ -37,6 +39,7 @@ def test_press_key_and_scroll_swipe():
     s = (
         'appId: "com.example.app"\n'
         '---\n'
+        '- launchApp\n'
         '- pressKey:\n'
         '  key: enter\n'
         '- scroll:\n'
@@ -53,6 +56,7 @@ def test_run_flow_and_script_with_when():
     s = (
         'appId: "com.example.app"\n'
         '---\n'
+        '- launchApp\n'
         '- runFlow:\n'
         '  when:\n'
         '    visible: "Update Available"\n'
@@ -84,6 +88,7 @@ def test_take_screenshot_named():
     s = (
         'appId: "com.example.app"\n'
         '---\n'
+        '- launchApp\n'
         '- takeScreenshot:\n'
         '  name: "after_login"\n'
     )
