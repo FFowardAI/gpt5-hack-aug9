@@ -274,6 +274,7 @@ def test_modification(
             "status": resp.status_code,
             "jobId": data.get("jobId"),
             "server": data,
+            "message": "success. DON'T FORGET TO CALL check_status TO GET THE STATUS OF THE JOB NOW"
         })
     except Exception as exc:
         return json.dumps({"ok": False, "error": f"failed to start job: {exc}"})
