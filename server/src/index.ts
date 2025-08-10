@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { spawn } from 'node:child_process';
 import { generateUnitTests } from './maestroGenerator.js';
-import { runMultipleMaestroTests, writeMaestroFlows } from './maestroTestRunner.js';
+import { runMultipleMaestroTests, writeMaestroFlows, runMaestro } from './maestroTestRunner.js';
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -127,6 +127,7 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
     const runResults = await runMultipleMaestroTests(flowFilePaths, {
       maestroBin: MAESTRO_BIN,
       workspace: MAESTRO_WORKSPACE,
+      streamOutput: true,
     });
 
     const responsePayload = {
@@ -146,6 +147,48 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
 
 app.get('/api/health', (_: Request, res: Response) => res.json({ ok: true }));
 
+// Simple route to manually run a specific Maestro flow by file name
+// Example:
+//   curl "http://localhost:${PORT}/api/test-maestrorunner?name=25d35967-7e41-44fa-b2f7-20ef01e9af25-1.yml"
+app.get('/api/test-maestrorunner', async (req: Request, res: Response) => {
+  try {
+    const name = (req.query.name || req.query.file || '25d35967-7e41-44fa-b2f7-20ef01e9af25-1.yml') as string;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Query param "name" (or "file") is required' });
+    }
+
+    // Force resolution within the configured flows directory
+    let candidatePath = path.join(MAESTRO_FLOW_DIR, name);
+
+    // If not found, try toggling between .yml and .yaml
+    if (!fs.existsSync(candidatePath)) {
+      if (name.toLowerCase().endsWith('.yml')) {
+        const alt = name.replace(/\.yml$/i, '.yaml');
+        const altPath = path.join(MAESTRO_FLOW_DIR, alt);
+        if (fs.existsSync(altPath)) candidatePath = altPath;
+      } else if (name.toLowerCase().endsWith('.yaml')) {
+        const alt = name.replace(/\.yaml$/i, '.yml');
+        const altPath = path.join(MAESTRO_FLOW_DIR, alt);
+        if (fs.existsSync(altPath)) candidatePath = altPath;
+      }
+    }
+
+    if (!fs.existsSync(candidatePath)) {
+      return res.status(404).json({ error: 'Flow file not found', tried: [candidatePath] });
+    }
+
+    const result = await runMaestro(candidatePath, {
+      maestroBin: MAESTRO_BIN,
+      workspace: MAESTRO_WORKSPACE,
+      streamOutput: true,
+    });
+
+    return res.json({ file: candidatePath, result });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? String(error) });
+  }
+});
+
 app.get('/', (_: Request, res: Response) => {
   res.type('html').send(`
     <html>
@@ -164,30 +207,10 @@ app.get('/', (_: Request, res: Response) => {
   `);
 });
 
-const serverInstance = app.listen(PORT, () => {
+app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[ai-tester] Server listening on http://localhost:${PORT}`);
 });
-
-// Increase server timeouts to accommodate generation + test runs
-// Defaults can be too low for long-running generate+run flows
-try {
-  const requestTimeoutMs = Number(process.env.SERVER_TIMEOUT_MS || 10 * 60 * 1000); // 10 minutes
-  const headersTimeoutMs = Number(process.env.SERVER_HEADERS_TIMEOUT_MS || requestTimeoutMs + 60 * 1000);
-  const keepAliveTimeoutMs = Number(process.env.SERVER_KEEPALIVE_TIMEOUT_MS || 120 * 1000);
-
-  serverInstance.setTimeout?.(requestTimeoutMs);
-  // Set Node server timeouts where supported
-  (serverInstance as any).headersTimeout = headersTimeoutMs;
-  (serverInstance as any).keepAliveTimeout = keepAliveTimeoutMs;
-  // eslint-disable-next-line no-console
-  console.log(
-    `[ai-tester] Timeouts set -> requestTimeout=${requestTimeoutMs}ms, headersTimeout=${headersTimeoutMs}ms, keepAliveTimeout=${keepAliveTimeoutMs}ms`
-  );
-} catch (e) {
-  // eslint-disable-next-line no-console
-  console.warn('[ai-tester] Failed to set server timeouts:', e);
-}
 
 
 
