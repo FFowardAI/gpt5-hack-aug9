@@ -191,6 +191,7 @@ def per_file_diff(repo_root: Path, file_path: Path) -> str:
         " automatically after the agent finishes. Accepts a boolean 'enabled' argument."
     ),
 )
+
 def toggle_copper(enabled: bool) -> str:
     settings = load_settings()
     settings["copperEnabled"] = bool(enabled)
@@ -301,7 +302,7 @@ def test_modification(
         "relatedFiles": normalized_related_abs,
     }
 
-    url = build_api_url("/api/generate")
+    url = build_api_url("/api/generate-tests")
     resp = requests.post(url, json=payload, timeout=20)
     status = resp.status_code
     try:

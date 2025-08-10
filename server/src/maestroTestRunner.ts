@@ -1,12 +1,39 @@
-const path = require('path');
-const fs = require('fs');
-const { spawn } = require('child_process');
+import * as path from 'path';
+import * as fs from 'fs';
+import { spawn, ChildProcess } from 'child_process';
+
+export interface MaestroRunOptions {
+  maestroBin?: string;
+  workspace?: string;
+  pollInterval?: number;
+  timeout?: number;
+}
+
+export interface MaestroStatus {
+  flowName: string;
+  passed: number;
+  failed: number;
+  skipped: number;
+  isRunning: boolean;
+}
+
+export interface MaestroResult extends MaestroStatus {
+  success: boolean;
+  errorMessage: string;
+  exitCode: number;
+  duration: number;
+  stdout: string;
+  stderr: string;
+}
 
 /**
- * Real-time Maestro test runner
+ * Real-time Maestro test runner with TypeScript support
  * Monitors test execution every 1 second and returns complete results
  */
-async function runMaestro(yamlFilePath, options = {}) {
+export async function runMaestro(
+  yamlFilePath: string, 
+  options: MaestroRunOptions = {}
+): Promise<MaestroResult> {
   const {
     maestroBin = 'maestro',
     workspace = process.cwd(),
@@ -25,21 +52,27 @@ async function runMaestro(yamlFilePath, options = {}) {
     let stdout = '';
     let stderr = '';
     let isComplete = false;
-    let lastStatus = { passed: 0, failed: 0, skipped: 0 };
+    let lastStatus: MaestroStatus = { 
+      flowName: 'Unknown', 
+      passed: 0, 
+      failed: 0, 
+      skipped: 0, 
+      isRunning: true 
+    };
 
     // Start Maestro process
-    const child = spawn(maestroBin, ['test', yamlFilePath], {
+    const child: ChildProcess = spawn(maestroBin, ['test', yamlFilePath], {
       cwd: workspace,
       shell: true,
       env: process.env,
     });
 
     // Capture output
-    child.stdout.on('data', (data) => {
+    child.stdout?.on('data', (data: Buffer) => {
       stdout += data.toString();
     });
 
-    child.stderr.on('data', (data) => {
+    child.stderr?.on('data', (data: Buffer) => {
       stderr += data.toString();
     });
 
@@ -65,7 +98,8 @@ async function runMaestro(yamlFilePath, options = {}) {
         clearInterval(progressMonitor);
         resolve({
           success: false,
-          error: 'Test timed out',
+          errorMessage: 'Test timed out',
+          exitCode: -1,
           duration: Date.now() - startTime,
           stdout,
           stderr,
@@ -75,12 +109,12 @@ async function runMaestro(yamlFilePath, options = {}) {
     }, pollInterval);
 
     // Handle completion
-    child.on('close', (code) => {
+    child.on('close', (code: number | null) => {
       isComplete = true;
       clearInterval(progressMonitor);
       
       const duration = Date.now() - startTime;
-      const finalStatus = parseFinalStatus(stdout, stderr, code);
+      const finalStatus = parseFinalStatus(stdout, stderr, code || -1);
       
       console.log(`🏁 Test completed in ${duration}ms`);
       console.log(`📋 Final result: ${finalStatus.success ? '✅ PASSED' : '❌ FAILED'}`);
@@ -98,7 +132,7 @@ async function runMaestro(yamlFilePath, options = {}) {
       });
     });
 
-    child.on('error', (error) => {
+    child.on('error', (error: Error) => {
       isComplete = true;
       clearInterval(progressMonitor);
       console.error(`💥 Failed to start Maestro: ${error.message}`);
@@ -108,9 +142,68 @@ async function runMaestro(yamlFilePath, options = {}) {
 }
 
 /**
+ * Write an array of Maestro YAML test strings to files in the given directory.
+ * Returns absolute file paths. Ensures the directory exists.
+ */
+export function writeMaestroFlows(
+  tests: string[],
+  options: { directory: string; jobId?: string; filePrefix?: string } 
+): string[] {
+  const { directory, jobId, filePrefix } = options;
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  const resolvedDir = path.isAbsolute(directory) ? directory : path.resolve(process.cwd(), directory);
+  const idBase = jobId ?? `${Date.now()}`;
+  const prefix = filePrefix ?? idBase;
+
+  console.log(`📝 Writing ${tests.length} Maestro flow(s) to: ${resolvedDir}`);
+  const filePaths: string[] = [];
+  for (let i = 0; i < tests.length; i += 1) {
+    const yamlContent = tests[i];
+    const fileName = `${prefix}-${i + 1}.yaml`;
+    const filePath = path.join(resolvedDir, fileName);
+    fs.writeFileSync(filePath, yamlContent, 'utf-8');
+    console.log(`  • ${fileName}`);
+    filePaths.push(filePath);
+  }
+  return filePaths;
+}
+
+/**
+ * Run multiple Maestro YAML tests sequentially and collect results per file.
+ */
+export async function runMultipleMaestroTests(
+  filePaths: string[],
+  options: MaestroRunOptions = {}
+): Promise<Array<{ filePath: string; result?: MaestroResult; error?: string }>> {
+  console.log(`\n🧪 Running ${filePaths.length} Maestro test(s)...`);
+  const results: Array<{ filePath: string; result?: MaestroResult; error?: string }> = [];
+  for (let idx = 0; idx < filePaths.length; idx += 1) {
+    const filePath = filePaths[idx];
+    const label = `[${idx + 1}/${filePaths.length}]`;
+    console.log(`▶️  ${label} ${path.basename(filePath)}`);
+    try {
+      const result = await runMaestro(filePath, options);
+      const outcome = result.success ? '✅ PASSED' : '❌ FAILED';
+      console.log(`   ${outcome} in ${result.duration}ms | steps: ✅${result.passed} ❌${result.failed} 🔲${result.skipped}`);
+      results.push({ filePath, result });
+    } catch (e: any) {
+      console.log(`   💥 ERROR: ${e?.message ?? String(e)}`);
+      results.push({ filePath, error: e?.message ?? String(e) });
+    }
+  }
+  const passedCount = results.filter(r => r.result?.success).length;
+  const failedCount = results.length - passedCount - results.filter(r => r.result).length + results.filter(r => r.error).length;
+  console.log(`🏁 Finished running ${results.length} test(s) → ✅ ${passedCount} passed, ❌ ${results.length - passedCount} failed/errored\n`);
+  return results;
+}
+
+/**
  * Parse real-time status from ongoing output
  */
-function parseRealTimeStatus(stdout, stderr) {
+function parseRealTimeStatus(stdout: string, stderr: string): MaestroStatus {
   const output = stdout + stderr;
   
   // Parse flow name
@@ -136,7 +229,7 @@ function parseRealTimeStatus(stdout, stderr) {
 /**
  * Parse final status when test completes
  */
-function parseFinalStatus(stdout, stderr, exitCode) {
+function parseFinalStatus(stdout: string, stderr: string, exitCode: number): Omit<MaestroResult, 'duration' | 'stdout' | 'stderr'> {
   const output = stdout + stderr;
   const success = exitCode === 0;
   
@@ -193,10 +286,10 @@ function parseFinalStatus(stdout, stderr, exitCode) {
 }
 
 // Test the function
-async function testRunner() {
-  console.log('🧪 Testing Maestro Runner\n');
+async function testRunner(): Promise<void> {
+  console.log('🧪 Testing TypeScript Maestro Runner\n');
   
-  const testFiles = [
+  const testFiles: string[] = [
     '/Users/windows95/Coding/ai-tester/a.yaml',
     '/Users/windows95/Coding/ai-tester/beff.yaml'
   ];
@@ -212,7 +305,7 @@ async function testRunner() {
     console.log(`${'='.repeat(60)}`);
 
     try {
-      const result = await runMaestro(testFile, {
+      const result: MaestroResult = await runMaestro(testFile, {
         timeout: 30000, // 30 second timeout for demo
         pollInterval: 1000 // Check every second
       });
@@ -229,17 +322,7 @@ async function testRunner() {
       }, null, 2));
 
     } catch (error) {
-      console.error(`💥 Test failed: ${error.message}`);
+      console.error(`💥 Test failed: ${(error as Error).message}`);
     }
   }
-}
-
-// Export for use in other modules
-module.exports = { runMaestro };
-
-// Run tests if this file is executed directly
-if (require.main === module) {
-  testRunner().then(() => {
-    console.log('\n🎉 Test runner demo completed!');
-  }).catch(console.error);
 }

@@ -5,6 +5,8 @@ import morgan from 'morgan';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { spawn } from 'node:child_process';
+import { generateUnitTests } from './maestroGenerator.js';
+import { runMultipleMaestroTests, writeMaestroFlows } from './maestroTestRunner.js';
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -67,7 +69,7 @@ async function notifyMcp(payload: unknown) {
 // 1) Receive modification context for test generation
 // POST /api/generate
 // Body: GenerateRequestBody
-app.post('/api/generate', async (req: Request, res: Response) => {
+app.post('/api/generate-tests', async (req: Request, res: Response) => {
   try {
     const body = req.body as Partial<GenerateRequestBody> | undefined;
     const userMessage = body?.userMessage;
@@ -97,7 +99,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
       flowPath: null,
       cursorTask: null,
-      modification: { userMessage, modifiedFiles, relatedFiles },
+      modification: { userMessage, modifiedFiles, relatedFiles } as GenerateRequestBody,
       flow: null,
       result: null,
       error: null,
@@ -105,8 +107,38 @@ app.post('/api/generate', async (req: Request, res: Response) => {
 
     console.log('received modification context', JSON.stringify(record, null, 2));
 
-    jobs.set(jobId, record);
-    return res.json({ jobId, flowPath: null, accepted: true });
+    // Generate Maestro tests using the new TS generator
+    const generatedTests = await generateUnitTests({
+      userMessage,
+      modifiedFiles,
+      relatedFiles,
+      count: 3,
+    });
+
+    console.log('generated tests', generatedTests);
+
+    // Persist generated tests to YAML files
+    const flowFilePaths = writeMaestroFlows(generatedTests.tests, {
+      directory: MAESTRO_FLOW_DIR,
+      jobId,
+    });
+
+    // Run Maestro on each generated test sequentially
+    const runResults = await runMultipleMaestroTests(flowFilePaths, {
+      maestroBin: MAESTRO_BIN,
+      workspace: MAESTRO_WORKSPACE,
+    });
+
+    const responsePayload = {
+      jobId,
+      tests: generatedTests.tests,
+      files: flowFilePaths,
+      results: runResults,
+      meta: generatedTests.meta ?? { generated: generatedTests.tests.length },
+    };
+
+    jobs.set(jobId, { ...record, status: 'generated', result: responsePayload });
+    return res.json(responsePayload);
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? String(error) });
   }
@@ -136,5 +168,6 @@ app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[ai-tester] Server listening on http://localhost:${PORT}`);
 });
+
 
 
