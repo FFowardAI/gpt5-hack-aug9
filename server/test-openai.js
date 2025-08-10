@@ -1,6 +1,12 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-const OpenAI = require('openai');
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+import OpenAI from 'openai';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 async function testOpenAI() {
   console.log('🔍 Testing OpenAI connection...');
@@ -23,7 +29,7 @@ async function testOpenAI() {
     console.log('🚀 Making test request to OpenAI...');
     
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4o',
       messages: [
         {
           role: 'system',
