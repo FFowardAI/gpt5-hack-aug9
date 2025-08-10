@@ -301,7 +301,7 @@ def test_modification(
         "relatedFiles": normalized_related_abs,
     }
 
-    url = build_api_url("/api/generate")
+    url = build_api_url("/api/generate-tests")
     resp = requests.post(url, json=payload, timeout=20)
     status = resp.status_code
     try:

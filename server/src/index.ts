@@ -67,7 +67,7 @@ async function notifyMcp(payload: unknown) {
 // 1) Receive modification context for test generation
 // POST /api/generate
 // Body: GenerateRequestBody
-app.post('/api/generate', async (req: Request, res: Response) => {
+app.post('/api/generate-tests', async (req: Request, res: Response) => {
   try {
     const body = req.body as Partial<GenerateRequestBody> | undefined;
     const userMessage = body?.userMessage;
@@ -104,6 +104,15 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     };
 
     console.log('received modification context', JSON.stringify(record, null, 2));
+
+    // TODO
+    // generate maestro scripts
+    // const maestroScripts = await generateMaestroScripts(record); // <- gui
+
+    // run scripts
+    // runScripts() // <- thiago
+
+    // notifyMcp()
 
     jobs.set(jobId, record);
     return res.json({ jobId, flowPath: null, accepted: true });
