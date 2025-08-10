@@ -1,4 +1,4 @@
-start: "appId:" SP STRING NL SEP NL steps
+start: "url:" SP STRING NL SEP NL steps
 SEP: "---"  
 steps: first_step (step)* (NL)?
 first_step: "-" SP "launchApp" NL?

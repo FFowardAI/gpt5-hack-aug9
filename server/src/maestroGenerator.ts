@@ -72,7 +72,7 @@ function buildPrompt(
     : '- (none)';
 
   const examples = [
-    'appId: "http://localhost:3000"',
+    'url: "http://localhost:3000"',
     '---',
     '- launchApp',
     '- waitForAnimationToEnd',
@@ -86,7 +86,11 @@ function buildPrompt(
   parts.push(
     'Call the maestro_yaml_grammar tool to generate ONE Maestro YAML test flow for WEB TESTING. ' +
     'Strictly conform to the grammar. Use DOUBLE QUOTES for strings where needed. ' +
-    'Start with appId: "http://localhost:5173" and include "- launchApp" and "- waitForAnimationToEnd" after the --- separator.\n'
+    'Start with url: "http://localhost:3000" and include "- launchApp" and "- waitForAnimationToEnd" after the --- separator.\n' +
+    '\nTEXT MATCHING NOTES:\n' +
+    '- Maestro supports partial text matching, so "Back" will match "Back to Homepage"\n' +
+    '- Use concise, distinctive text that uniquely identifies UI elements\n' +
+    '- Prefer shorter text snippets that are likely to remain stable\n'
   );
   parts.push(`\nUser message:\n${userMessage}\n`);
   parts.push(`\nChanged files (paths):\n${changedList}\n`);
@@ -262,6 +266,6 @@ export interface JobRecordLike {
 export async function generateMaestroScripts(record: JobRecordLike): Promise<string[]> {
   if (!record.modification) return [];
   const { userMessage, modifiedFiles, relatedFiles } = record.modification;
-  const result = await generateUnitTests({ userMessage, modifiedFiles, relatedFiles, count: 3 });
+  const result = await generateUnitTests({ userMessage, modifiedFiles, relatedFiles, count: 1 });
   return result.tests;
 }

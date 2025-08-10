@@ -7,7 +7,6 @@ export interface MaestroRunOptions {
   workspace?: string;
   pollInterval?: number;
   timeout?: number;
-  streamOutput?: boolean;
 }
 
 export interface MaestroStatus {
@@ -40,13 +39,11 @@ export async function runMaestro(
     maestroBin = 'maestro',
     workspace = process.cwd(),
     pollInterval = 1000, // 1 second
-    timeout = 60000, // 60 seconds max
-    streamOutput = true
+    timeout = 60000 // 60 seconds max
   } = options;
 
   return new Promise((resolve, reject) => {
     console.log(`🚀 Starting Maestro test: ${yamlFilePath}`);
-    console.log(`🔧 Command: ${maestroBin} test ${yamlFilePath} (cwd: ${workspace})`);
 
     if (!fs.existsSync(yamlFilePath)) {
       return reject(new Error(`Test file not found: ${yamlFilePath}`));
@@ -89,17 +86,19 @@ export async function runMaestro(
       env: { ...process.env, MAESTRO_CLI_LOG_LEVEL: 'DEBUG' },
     });
 
-    // Capture and stream output
+    // Capture output with real-time logging
     child.stdout?.on('data', (data: Buffer) => {
-      const text = data.toString();
-      stdout += text;
-      if (streamOutput) process.stdout.write(text);
+      const output = data.toString();
+      stdout += output;
+      // Log stdout in real-time for debugging
+      console.log(`[MAESTRO-STDOUT] ${output.trim()}`);
     });
 
     child.stderr?.on('data', (data: Buffer) => {
-      const text = data.toString();
-      stderr += text;
-      if (streamOutput) process.stderr.write(text);
+      const output = data.toString();
+      stderr += output;
+      // Log stderr in real-time for debugging
+      console.log(`[MAESTRO-STDERR] ${output.trim()}`);
     });
 
     // Monitor progress every second
@@ -140,7 +139,8 @@ export async function runMaestro(
       clearInterval(progressMonitor);
 
       const duration = Date.now() - startTime;
-      const finalStatus = parseFinalStatus(stdout, stderr, code || -1);
+      // Use nullish coalescing to preserve exit code 0 as a valid success
+      const finalStatus = parseFinalStatus(stdout, stderr, code ?? -1);
 
       console.log(`🏁 Test completed in ${duration}ms`);
       console.log(`📋 Final result: ${finalStatus.success ? '✅ PASSED' : '❌ FAILED'}`);
@@ -238,9 +238,8 @@ export async function runMultipleMaestroTests(
     }
   }
   const passedCount = results.filter(r => r.result?.success).length;
-  const failedCount = results.filter(r => r.result && !r.result.success).length;
-  const erroredCount = results.filter(r => r.error).length;
-  console.log(`🏁 Finished running ${results.length} test(s) → ✅ ${passedCount} passed, ❌ ${failedCount} failed, 💥 ${erroredCount} errored\n`);
+  const failedCount = results.length - passedCount - results.filter(r => r.result).length + results.filter(r => r.error).length;
+  console.log(`🏁 Finished running ${results.length} test(s) → ✅ ${passedCount} passed, ❌ ${results.length - passedCount} failed/errored\n`);
   return results;
 }
 
