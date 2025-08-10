@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { spawn } from 'node:child_process';
+import { generateUnitTests } from './maestroGenerator.js';
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -97,7 +98,7 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
       flowPath: null,
       cursorTask: null,
-      modification: { userMessage, modifiedFiles, relatedFiles },
+      modification: { userMessage, modifiedFiles, relatedFiles } as GenerateRequestBody,
       flow: null,
       result: null,
       error: null,
@@ -105,17 +106,17 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
 
     console.log('received modification context', JSON.stringify(record, null, 2));
 
-    // TODO
-    // generate maestro scripts
-    // const maestroScripts = await generateMaestroScripts(record); // <- gui
+    // Generate Maestro tests using the new TS generator
+    const result = await generateUnitTests({
+      userMessage,
+      modifiedFiles,
+      relatedFiles,
+      count: 3,
+    });
 
-    // run scripts
-    // runScripts() // <- thiago
-
-    // notifyMcp()
-
-    jobs.set(jobId, record);
-    return res.json({ jobId, flowPath: null, accepted: true });
+    // For now, just return the tests in the response
+    jobs.set(jobId, { ...record, status: 'generated', result });
+    return res.json({ jobId, tests: result.tests, meta: result.meta });
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? String(error) });
   }
@@ -145,5 +146,6 @@ app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[ai-tester] Server listening on http://localhost:${PORT}`);
 });
+
 
 
