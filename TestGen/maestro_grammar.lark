@@ -1,11 +1,7 @@
-// Maestro YAML (web focused) – strict, GPT-5 friendly grammar
-// Accepts either url: or appId: header. Encourages simple one-line commands.
-
-start: header NL SEP NL steps
-header: ("url:" SP URL) | ("appId:" SP STRING)
-SEP: "---"
-
-steps: step (step)* (NL)?
+start: "appId:" SP STRING NL SEP NL steps
+SEP: "---"  
+steps: first_step (step)* (NL)?
+first_step: "-" SP "launchApp" NL?
 step: "-" SP command NL?
 
 command: "launchApp"
