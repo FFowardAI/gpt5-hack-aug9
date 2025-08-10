@@ -1,0 +1,163 @@
+# Dependencies
+node_modules/
+vendor/
+venv/
+env/
+.env/
+*.egg-info/
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.coverage
+*.cover
+.hypothesis/
+.pytest_cache/
+.phpunit.result.cache
+
+# Build outputs
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+
+# Package files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Python
+*.py[cod]
+*$py.class
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# JavaScript/TypeScript
+dist/
+.next/
+out/
+.nuxt/
+.cache/
+.parcel-cache/
+.turbo/
+*.tsbuildinfo
+
+# Ruby
+*.gem
+.bundle/
+Gemfile.lock
+.ruby-version
+.ruby-gemset
+
+# Java
+target/
+*.class
+.classpath
+.project
+.settings/
+
+# C/C++
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+
+# Go
+*.test
+*.prof
+vendor/
+go.sum
+
+# .NET
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Secrets
+*.key
+*.pem
+*.crt
+*.p12
+secrets/
+credentials/

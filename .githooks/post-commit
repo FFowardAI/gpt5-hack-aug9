@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+
+# Invoke the MCP server's postCommit tool. This should print "OK".
+npx -y mcpgod tool /Users/windows95/Coding/ai-tester/mcp-post-commit/index.mjs postCommit || true
+
