@@ -92,11 +92,15 @@ def build_prompt(
 
     parts.append("\nFollow these patterns exactly (indentation and quoting):\n" + examples)
     parts.append(
-        "\nConstraints:\n"
-        "- Use double-quoted strings for all text and file paths.\n"
+        "\nCRITICAL FORMATTING RULES:\n"
+        "- Use double-quoted strings for ALL text and file paths.\n"
         "- Include the appId header and the '---' separator.\n"
-        "- Preferred: one-line 'tapOn: \"TEXT\"' or mapping with 'id:'/'text:' (never bare 'tapOn:').\n"
-        "- If using conditions, use 'when:' followed by 4-space indented lines with one of: visible, notVisible, platform, true.\n"
+        "- For commands with parameters, choose ONE format:\n"
+        "  * Simple: 'tapOn: \"text\"' (one line)\n"
+        "  * Map: 'tapOn:' NEWLINE '  id: \"...\"' (2-space indent)\n"
+        "- NEVER use 'tapOn:' alone without immediate content\n"
+        "- takeScreenshot requires map form: 'takeScreenshot:' NEWLINE '  name: \"...\"'\n"
+        "- If using conditions, use 'when:' followed by 4-space indented lines.\n"
     )
     return "".join(parts)
 
@@ -131,12 +135,15 @@ def generate_one_with_gpt(
         changed_diffs=changed_diffs,
         related_file_bodies=related_bodies,
     )
-    for attempt in range(3):
+    for attempt in range(2):  # Reduced retries for faster testing
         response = client.responses.create(
             model=model,
             input=prompt if attempt == 0 else (
                 prompt +
-                "\n\nCorrection: You violated the grammar previously. Ensure 'tapOn:' is one-line 'tapOn: \"...\"' or includes an indented 'id:' or 'text:' line. Use double quotes everywhere."
+                "\n\nCORRECTION: Grammar violation! For mapping commands like 'tapOn:', 'takeScreenshot:', etc:\n" +
+                "- Simple form: 'tapOn: \"text\"' (one line)\n" +
+                "- Map form: 'tapOn:' then NEWLINE, then '  id: \"...\"' (indented 2 spaces)\n" +
+                "NEVER mix forms. After a colon in map form, ALWAYS have a newline before the indented properties."
             ),
             text={
                 "verbosity": verbosity,
@@ -166,7 +173,14 @@ def generate_one_with_gpt(
         try:
             validate_with_lark(grammar_text, tool_input)
             return tool_input
-        except Exception:
+        except Exception as e:
+            # Log what was generated for debugging
+            if attempt == 1:  # Last attempt
+                print(json.dumps({
+                    "debug": "Last attempt failed validation",
+                    "generated": tool_input[:500] if tool_input else "None",
+                    "error": str(e)
+                }), file=sys.stderr)
             continue
     raise RuntimeError("Failed to generate valid YAML after retries")
 
@@ -219,10 +233,14 @@ def main(argv: List[str] | None = None) -> int:
 
     tests: List[str] = []
 
-    if not os.environ.get("OPENAI_API_KEY"):
+    # Hardcoded API key (or fallback to environment)
+    api_key = os.environ.get("OPENAI_API_KEY") or "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"
+    
+    if not api_key:
         print(json.dumps({"error": "OPENAI_API_KEY is not set"}), file=sys.stderr)
         return 1
-    client = OpenAI()
+    
+    client = OpenAI(api_key=api_key)
 
     for i in range(args.count):
         unit = generate_one_with_gpt(
