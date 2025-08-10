@@ -330,16 +330,39 @@ def wait_job_step(job_id: str, step_seconds: int = 8) -> str:
     ),
 )
 def check_status(job_id: str) -> str:
+    import time
     # Poll in 8s + 8s + 4s chunks to stay under tool caps
     chunks = [8, 8, 4]
-    last = None
-    for s in chunks:
-        last = json.loads(wait_job_step(job_id, s))
-        job = (last or {}).get("job", {})
-        status = job.get("status")
-        if status in {"generated", "passed", "failed"}:
-            break
-    return json.dumps(last or {"ok": False, "error": "no status"})
+    last_response = None
+    
+    for step_seconds in chunks:
+        deadline = time.time() + step_seconds
+        while time.time() < deadline:
+            # Make direct HTTP request instead of calling other tool functions
+            url = build_api_url(f"/api/job/{job_id}")
+            try:
+                resp = requests.get(url, timeout=min(API_TIMEOUT_SECONDS, 8))
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {"text": resp.text[:500]}
+                
+                last_response = {
+                    "ok": resp.status_code < 400,
+                    "status": resp.status_code,
+                    "job": data,
+                }
+                
+                status = data.get("status") if isinstance(data, dict) else None
+                if status in {"generated", "passed", "failed"}:
+                    return json.dumps(last_response)
+                    
+            except Exception as exc:
+                last_response = {"ok": False, "error": f"failed to get status: {exc}"}
+                
+            time.sleep(1)
+    
+    return json.dumps(last_response or {"ok": False, "error": "no status"})
 
 
 if __name__ == "__main__":
