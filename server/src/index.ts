@@ -164,10 +164,30 @@ app.get('/', (_: Request, res: Response) => {
   `);
 });
 
-app.listen(PORT, () => {
+const serverInstance = app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[ai-tester] Server listening on http://localhost:${PORT}`);
 });
+
+// Increase server timeouts to accommodate generation + test runs
+// Defaults can be too low for long-running generate+run flows
+try {
+  const requestTimeoutMs = Number(process.env.SERVER_TIMEOUT_MS || 10 * 60 * 1000); // 10 minutes
+  const headersTimeoutMs = Number(process.env.SERVER_HEADERS_TIMEOUT_MS || requestTimeoutMs + 60 * 1000);
+  const keepAliveTimeoutMs = Number(process.env.SERVER_KEEPALIVE_TIMEOUT_MS || 120 * 1000);
+
+  serverInstance.setTimeout?.(requestTimeoutMs);
+  // Set Node server timeouts where supported
+  (serverInstance as any).headersTimeout = headersTimeoutMs;
+  (serverInstance as any).keepAliveTimeout = keepAliveTimeoutMs;
+  // eslint-disable-next-line no-console
+  console.log(
+    `[ai-tester] Timeouts set -> requestTimeout=${requestTimeoutMs}ms, headersTimeout=${headersTimeoutMs}ms, keepAliveTimeout=${keepAliveTimeoutMs}ms`
+  );
+} catch (e) {
+  // eslint-disable-next-line no-console
+  console.warn('[ai-tester] Failed to set server timeouts:', e);
+}
 
 
 
