@@ -8,6 +8,8 @@ env/
 dist/
 build/
 
+server/maestro-flows
+
 # Environment variables
 .env
 .env.local

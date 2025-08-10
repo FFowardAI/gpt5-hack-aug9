@@ -191,6 +191,7 @@ def per_file_diff(repo_root: Path, file_path: Path) -> str:
         " automatically after the agent finishes. Accepts a boolean 'enabled' argument."
     ),
 )
+
 def toggle_copper(enabled: bool) -> str:
     settings = load_settings()
     settings["copperEnabled"] = bool(enabled)

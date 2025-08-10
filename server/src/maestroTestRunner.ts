@@ -1,5 +1,3 @@
-import { JobRecord } from "./index";
-
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
@@ -144,6 +142,65 @@ export async function runMaestro(
 }
 
 /**
+ * Write an array of Maestro YAML test strings to files in the given directory.
+ * Returns absolute file paths. Ensures the directory exists.
+ */
+export function writeMaestroFlows(
+  tests: string[],
+  options: { directory: string; jobId?: string; filePrefix?: string } 
+): string[] {
+  const { directory, jobId, filePrefix } = options;
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  const resolvedDir = path.isAbsolute(directory) ? directory : path.resolve(process.cwd(), directory);
+  const idBase = jobId ?? `${Date.now()}`;
+  const prefix = filePrefix ?? idBase;
+
+  console.log(`📝 Writing ${tests.length} Maestro flow(s) to: ${resolvedDir}`);
+  const filePaths: string[] = [];
+  for (let i = 0; i < tests.length; i += 1) {
+    const yamlContent = tests[i];
+    const fileName = `${prefix}-${i + 1}.yaml`;
+    const filePath = path.join(resolvedDir, fileName);
+    fs.writeFileSync(filePath, yamlContent, 'utf-8');
+    console.log(`  • ${fileName}`);
+    filePaths.push(filePath);
+  }
+  return filePaths;
+}
+
+/**
+ * Run multiple Maestro YAML tests sequentially and collect results per file.
+ */
+export async function runMultipleMaestroTests(
+  filePaths: string[],
+  options: MaestroRunOptions = {}
+): Promise<Array<{ filePath: string; result?: MaestroResult; error?: string }>> {
+  console.log(`\n🧪 Running ${filePaths.length} Maestro test(s)...`);
+  const results: Array<{ filePath: string; result?: MaestroResult; error?: string }> = [];
+  for (let idx = 0; idx < filePaths.length; idx += 1) {
+    const filePath = filePaths[idx];
+    const label = `[${idx + 1}/${filePaths.length}]`;
+    console.log(`▶️  ${label} ${path.basename(filePath)}`);
+    try {
+      const result = await runMaestro(filePath, options);
+      const outcome = result.success ? '✅ PASSED' : '❌ FAILED';
+      console.log(`   ${outcome} in ${result.duration}ms | steps: ✅${result.passed} ❌${result.failed} 🔲${result.skipped}`);
+      results.push({ filePath, result });
+    } catch (e: any) {
+      console.log(`   💥 ERROR: ${e?.message ?? String(e)}`);
+      results.push({ filePath, error: e?.message ?? String(e) });
+    }
+  }
+  const passedCount = results.filter(r => r.result?.success).length;
+  const failedCount = results.length - passedCount - results.filter(r => r.result).length + results.filter(r => r.error).length;
+  console.log(`🏁 Finished running ${results.length} test(s) → ✅ ${passedCount} passed, ❌ ${results.length - passedCount} failed/errored\n`);
+  return results;
+}
+
+/**
  * Parse real-time status from ongoing output
  */
 function parseRealTimeStatus(stdout: string, stderr: string): MaestroStatus {
@@ -268,11 +325,4 @@ async function testRunner(): Promise<void> {
       console.error(`💥 Test failed: ${(error as Error).message}`);
     }
   }
-}
-
-// Run tests if this file is executed directly
-if (require.main === module) {
-  testRunner().then(() => {
-    console.log('\n🎉 TypeScript test runner demo completed!');
-  }).catch(console.error);
 }

@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { spawn } from 'node:child_process';
 import { generateUnitTests } from './maestroGenerator.js';
+import { runMultipleMaestroTests, writeMaestroFlows } from './maestroTestRunner.js';
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -107,16 +108,37 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
     console.log('received modification context', JSON.stringify(record, null, 2));
 
     // Generate Maestro tests using the new TS generator
-    const result = await generateUnitTests({
+    const generatedTests = await generateUnitTests({
       userMessage,
       modifiedFiles,
       relatedFiles,
       count: 3,
     });
 
-    // For now, just return the tests in the response
-    jobs.set(jobId, { ...record, status: 'generated', result });
-    return res.json({ jobId, tests: result.tests, meta: result.meta });
+    console.log('generated tests', generatedTests);
+
+    // Persist generated tests to YAML files
+    const flowFilePaths = writeMaestroFlows(generatedTests.tests, {
+      directory: MAESTRO_FLOW_DIR,
+      jobId,
+    });
+
+    // Run Maestro on each generated test sequentially
+    const runResults = await runMultipleMaestroTests(flowFilePaths, {
+      maestroBin: MAESTRO_BIN,
+      workspace: MAESTRO_WORKSPACE,
+    });
+
+    const responsePayload = {
+      jobId,
+      tests: generatedTests.tests,
+      files: flowFilePaths,
+      results: runResults,
+      meta: generatedTests.meta ?? { generated: generatedTests.tests.length },
+    };
+
+    jobs.set(jobId, { ...record, status: 'generated', result: responsePayload });
+    return res.json(responsePayload);
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? String(error) });
   }
