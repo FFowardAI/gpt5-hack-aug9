@@ -1,0 +1,32 @@
+start: "appId:" SP STRING NL SEP NL steps
+SEP: "---"
+steps: step (NL step)* (NL)?
+step: "-" SP command
+command: "launchApp" | "back" | "hideKeyboard" | "waitForAnimationToEnd" | "clearState" | "clearKeychain" | "takeScreenshot" | "tapOn:" SP STRING | "inputText:" SP STRING | "assertVisible:" SP STRING | "assertNotVisible:" SP STRING | "openLink:" SP STRING | tap_on_map | press_key_map | erase_text_map | scroll_map | swipe_map | take_screenshot_map | run_flow_map | run_script_map
+tap_on_map: "tapOn:" NL SP2 selector_kv (NL SP2 selector_extra_kv)* (NL)?
+selector_kv: "id:" SP STRING | "text:" SP STRING
+selector_extra_kv: "index:" SP INT | "optional:" SP BOOL | "timeoutMs:" SP INT
+press_key_map: "pressKey:" NL SP2 "key:" SP KEY
+erase_text_map: "eraseText:" NL SP2 "characters:" SP INT
+scroll_map: "scroll:" NL SP2 "direction:" SP DIRECTION (NL SP2 "times:" SP INT)?
+swipe_map: "swipe:" NL SP2 "direction:" SP DIRECTION (NL SP2 "durationMs:" SP INT)?
+take_screenshot_map: "takeScreenshot:" NL SP2 "name:" SP STRING
+run_flow_map: "runFlow:" NL (SP2 "when:" NL when_clause)? SP2 "file:" SP PATH
+run_script_map: "runScript:" NL (SP2 "when:" NL when_clause)? SP2 "file:" SP PATH
+when_clause: when_line (NL when_line)* (NL)?
+when_line: SP4 condition_kv
+condition_kv: "visible:" SP STRING
+            | "notVisible:" SP STRING
+            | "platform:" SP PLATFORM
+            | "true:" SP STRING
+SP: " "
+SP2: "  "
+SP4: "    "
+NL: /\r?\n/
+STRING: /"[^"\n]{1,200}"/
+PATH: STRING
+INT: /[0-9]{1,6}/
+BOOL: "true" | "false"
+DIRECTION: "up" | "down" | "left" | "right"
+KEY: "enter" | "return" | "go" | "done" | "tab" | "escape" | "space" | "backspace" | "delete" | "back" | "home" | "menu" | "search" | "volumeUp" | "volumeDown" | "camera" | "up" | "down" | "left" | "right"
+PLATFORM: "iOS" | "Android"
