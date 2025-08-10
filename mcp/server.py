@@ -281,7 +281,7 @@ def test_modification(
 
 @mcp.tool(
     name="get_job_status",
-    description="Poll job status from the local server. Returns {id, status, result?, error?}."
+    description="Poll job status from the local server. Returns {id, status, result?, error?, progress?}."
 )
 def get_job_status(job_id: str) -> str:
     url = build_api_url(f"/api/job/{job_id}")
@@ -319,6 +319,26 @@ def wait_job_step(job_id: str, step_seconds: int = 8) -> str:
         if status in {"generated", "passed", "failed"}:
             break
         time.sleep(1)
+    return json.dumps(last or {"ok": False, "error": "no status"})
+
+
+@mcp.tool(
+    name="check_status",
+    description=(
+        "Convenience tool: poll a job up to 20s and return status, progress, and a brief summary. "
+        "If not finished, call again later."
+    ),
+)
+def check_status(job_id: str) -> str:
+    # Poll in 8s + 8s + 4s chunks to stay under tool caps
+    chunks = [8, 8, 4]
+    last = None
+    for s in chunks:
+        last = json.loads(wait_job_step(job_id, s))
+        job = (last or {}).get("job", {})
+        status = job.get("status")
+        if status in {"generated", "passed", "failed"}:
+            break
     return json.dumps(last or {"ok": False, "error": "no status"})
 
 

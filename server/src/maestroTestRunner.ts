@@ -25,6 +25,7 @@ export interface MaestroResult extends MaestroStatus {
   stdout: string;
   stderr: string;
   debugDir?: string;
+  screenshots?: string[];
 }
 
 /**
@@ -166,12 +167,55 @@ export async function runMaestro(
         }
       }
 
+      // Collect screenshots if any
+      let screenshots: string[] = [];
+      const candidateNames = new Set<string>();
+      try {
+        // 1) From debugDir: generic screenshot files (failures)
+        const filesInDebug = fs.readdirSync(debugDir);
+        screenshots.push(
+          ...filesInDebug
+            .filter(f => f.toLowerCase().endsWith('.png') && f.toLowerCase().startsWith('screenshot'))
+            .map(f => path.join(debugDir, f))
+        );
+
+        // 2) From commands JSON: explicit takeScreenshotCommand paths (e.g., signup_prank)
+        const cmdFiles = filesInDebug.filter(f => f.includes('commands-') && f.toLowerCase().endsWith('.json'));
+        for (const cf of cmdFiles) {
+          try {
+            const raw = fs.readFileSync(path.join(debugDir, cf), 'utf-8');
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) {
+              for (const entry of arr) {
+                const p = entry?.command?.takeScreenshotCommand?.path;
+                if (typeof p === 'string' && p.length) {
+                  candidateNames.add(`${p}.png`);
+                }
+              }
+            }
+          } catch {
+            // ignore parse errors per file
+          }
+        }
+
+        // 3) Resolve candidate names in likely locations: debugDir and workspace
+        for (const name of candidateNames) {
+          const inDebug = path.join(debugDir, name);
+          if (fs.existsSync(inDebug)) screenshots.push(inDebug);
+          const inWorkspace = path.join(workspace, name);
+          if (fs.existsSync(inWorkspace)) screenshots.push(inWorkspace);
+        }
+      } catch {
+        // ignore
+      }
+
       resolve({
         ...finalStatus,
         duration,
         stdout,
         stderr,
-        debugDir
+        debugDir,
+        screenshots
       });
     });
 

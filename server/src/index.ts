@@ -37,6 +37,7 @@ export interface JobRecord {
   result: any;
   error: any;
   completedAt?: string;
+  progress?: string[];
 }
 
 const jobs = new Map<string, JobRecord>();
@@ -196,6 +197,7 @@ async function runTestsWithRetry(options: {
   maestroBin: string;
   workspace: string;
   maxRetries: number;
+  onProgress?: (message: string) => void;
 }): Promise<RetryResult> {
   const {
     userMessage,
@@ -206,7 +208,8 @@ async function runTestsWithRetry(options: {
     initialFiles,
     maestroBin,
     workspace,
-    maxRetries
+    maxRetries,
+    onProgress
   } = options;
 
   let currentTests = initialTests;
@@ -214,20 +217,31 @@ async function runTestsWithRetry(options: {
   let retryCount = 0;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    console.log(`\n🔄 Test attempt ${attempt + 1}/${maxRetries + 1}`);
+    const attemptMsg = `\n🔄 Test attempt ${attempt + 1}/${maxRetries + 1}`;
+    console.log(attemptMsg);
+    onProgress?.(attemptMsg);
 
     // Run the current tests
     const runResults = await runMultipleMaestroTests(currentFiles, {
       maestroBin,
       workspace,
     });
+    const passCount = runResults.filter(r => r.result?.success).length;
+    onProgress?.(`Attempt ${attempt + 1}: ${passCount}/${runResults.length} flow(s) passed.`);
+    for (const r of runResults) {
+      if (r.result?.debugDir) {
+        onProgress?.(`Debug: ${r.result.debugDir}`);
+      }
+    }
 
     // Check if any tests passed
     const hasPassingTests = runResults.some(r => r.result?.success);
     const allTestsPassed = runResults.every(r => r.result?.success);
 
     if (allTestsPassed) {
-      console.log(`✅ All tests passed on attempt ${attempt + 1}`);
+      const msg = `✅ All tests passed on attempt ${attempt + 1}`;
+      console.log(msg);
+      onProgress?.(msg);
       return {
         tests: currentTests,
         files: currentFiles,
@@ -242,7 +256,9 @@ async function runTestsWithRetry(options: {
 
     // If this was the last attempt, return the results
     if (attempt === maxRetries) {
-      console.log(`❌ Reached maximum retries (${maxRetries + 1} attempts). Returning final results.`);
+      const msg = `❌ Reached maximum retries (${maxRetries + 1} attempts). Returning final results.`;
+      console.log(msg);
+      onProgress?.(msg);
       return {
         tests: currentTests,
         files: currentFiles,
@@ -267,7 +283,9 @@ async function runTestsWithRetry(options: {
         .join('\n');
     }
 
-    console.log(`🔍 Failure feedback for retry ${attempt + 1}:\n${combinedFeedback.substring(0, 500)}...`);
+    const fbMsg = `🔍 Failure feedback for retry ${attempt + 1}:\n${combinedFeedback.substring(0, 500)}...`;
+    console.log(fbMsg);
+    onProgress?.(fbMsg);
 
     // Regenerate tests with failure feedback
     try {
@@ -289,9 +307,13 @@ async function runTestsWithRetry(options: {
       currentFiles = newFiles;
       retryCount = attempt + 1;
 
-      console.log(`🔄 Generated ${regeneratedTests.tests.length} new tests for retry ${attempt + 1}`);
+      const genMsg = `🔄 Generated ${regeneratedTests.tests.length} new test(s) for retry ${attempt + 1}`;
+      console.log(genMsg);
+      onProgress?.(genMsg);
     } catch (error) {
-      console.error(`❌ Failed to regenerate tests for attempt ${attempt + 1}:`, error);
+      const errMsg = `❌ Failed to regenerate tests for attempt ${attempt + 1}: ${String(error)}`;
+      console.error(errMsg);
+      onProgress?.(errMsg);
       // Continue with existing tests if regeneration fails
     }
   }
@@ -360,7 +382,13 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
 
     const runJob = async () => {
       try {
-        jobs.set(jobId, { ...record, status: 'running' });
+        const base = jobs.get(jobId) || record;
+        const progress: string[] = base.progress || [];
+        const push = (m: string) => {
+          progress.push(m);
+          jobs.set(jobId, { ...base, status: 'running', progress });
+        };
+        push('Started job');
 
         // Generate Maestro tests using the new TS generator
         const generatedTests = await generateUnitTests({
@@ -371,6 +399,7 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
         });
 
         console.log('generated tests', generatedTests);
+        push('Generated initial tests');
 
         // Persist generated tests to YAML files
         const flowFilePaths = writeMaestroFlows(generatedTests.tests, {
@@ -388,7 +417,8 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
           initialFiles: flowFilePaths,
           maestroBin: MAESTRO_BIN,
           workspace: MAESTRO_WORKSPACE,
-          maxRetries: 5
+          maxRetries: 5,
+          onProgress: push
         });
 
         const responsePayload = {
@@ -396,6 +426,14 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
           tests: finalResults.tests,
           files: finalResults.files,
           results: finalResults.results,
+          // Present a friendlier summary for UIs
+          summary: finalResults.results.map(r => ({
+            file: r.filePath,
+            success: !!r.result?.success,
+            durationMs: r.result?.duration ?? null,
+            debugDir: r.result?.debugDir ?? null,
+            screenshots: r.result?.screenshots ?? [],
+          })),
           meta: {
             ...generatedTests.meta,
             generated: finalResults.tests.length,
@@ -404,9 +442,12 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
           },
         };
 
-        jobs.set(jobId, { ...record, status: 'generated', result: responsePayload });
+        jobs.set(jobId, { ...record, status: 'generated', result: responsePayload, progress });
       } catch (err: any) {
-        jobs.set(jobId, { ...record, status: 'failed', error: err?.message ?? String(err) });
+        const base = jobs.get(jobId) || record;
+        const progress = base.progress || [];
+        progress.push(`Error: ${err?.message ?? String(err)}`);
+        jobs.set(jobId, { ...record, status: 'failed', error: err?.message ?? String(err), progress });
       }
     };
 
@@ -431,7 +472,7 @@ app.get('/api/job/:id', (req: Request, res: Response) => {
   const id = String(req.params.id);
   const record = jobs.get(id);
   if (!record) return res.status(404).json({ error: 'job not found', id });
-  return res.json({ id, status: record.status, result: record.result, error: record.error });
+  return res.json({ id, status: record.status, result: record.result, error: record.error, progress: record.progress || [] });
 });
 
 // Simple route to manually run a specific Maestro flow by file name

@@ -106,7 +106,7 @@ function buildPrompt(
     'Strictly conform to the grammar. Use DOUBLE QUOTES for strings where needed. ' +
     'Start with url: "http://localhost:3000" and include "- launchApp" and "- waitForAnimationToEnd" after the --- separator.\n' +
     '\nTEXT MATCHING NOTES:\n' +
-    '- Maestro supports partial text matching, so "Back" will match "Back to Homepage"\n' +
+    '- Maestro does not support partial text matching, so "Back" will not match "Back to Homepage"\n' +
     '- Use concise, distinctive text that uniquely identifies UI elements\n' +
     '- Prefer shorter text snippets that are likely to remain stable\n'
   );
