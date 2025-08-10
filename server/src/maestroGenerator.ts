@@ -72,7 +72,7 @@ function buildPrompt(
     : '- (none)';
 
   const examples = [
-    'appId: "com.example.app"',
+    'url: "http://localhost:3000"',
     '---',
     '- tapOn: "Login"',
     '- inputText: "username"',
@@ -111,7 +111,7 @@ function buildPrompt(
   parts.push(
     '\nCRITICAL FORMATTING RULES:\n' +
       '- Use double-quoted strings for ALL text and file paths.\n' +
-      "- Include the appId header and the '---' separator.\n" +
+      "- Include the url header and the '---' separator.\n" +
       '- For commands with parameters, choose ONE format:\n' +
       '  * Simple: \"tapOn: \"text\"\" (one line)\n' +
       '  * Map: \"tapOn:\" NEWLINE \"  id: \"...\"\" (2-space indent)\n' +
