@@ -13,6 +13,7 @@ Usage (via Cursor MCP): configure this script as an MCP server using stdio.
 from __future__ import annotations
 
 import os
+import sys
 import subprocess
 from pathlib import Path
 from typing import List, Optional
@@ -24,6 +25,10 @@ import requests
 mcp = FastMCP("fastMCP")
 
 CONFIG_PATH = (Path(__file__).parent / "config.json").resolve()
+
+# HTTP timeout (seconds) for requests to the local AI tester API
+# Can be overridden with environment variable MCP_API_TIMEOUT_SECONDS
+API_TIMEOUT_SECONDS = int(os.getenv("MCP_API_TIMEOUT_SECONDS", "600"))
 
 
 def load_settings() -> dict:
@@ -303,7 +308,7 @@ def test_modification(
     }
 
     url = build_api_url("/api/generate-tests")
-    resp = requests.post(url, json=payload, timeout=20)
+    resp = requests.post(url, json=payload, timeout=API_TIMEOUT_SECONDS)
     status = resp.status_code
     try:
         data = resp.json()

@@ -50,11 +50,28 @@ function readGrammar(): string {
   throw new Error('maestro_grammar.lark not found in TestGen directory');
 }
 
+function readCommandsPrompt(): string {
+  const root = repoRootDir();
+  const candidates = [
+    path.join(root, 'TestGen', 'COMMANDS.prompt'),
+    path.join(process.cwd(), 'TestGen', 'COMMANDS.prompt'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return fs.readFileSync(p, 'utf-8');
+    } catch (_) {
+      // ignore
+    }
+  }
+  // Return empty string if file not found (backward compatibility)
+  return '';
+}
+
+// Truncation disabled to provide complete context as requested
+// Keeping function in case we need to re-enable it with higher limits
 function truncate(text: string, limit = 8000): string {
-  if (text.length <= limit) return text;
-  const head = text.slice(0, Math.floor(limit / 2));
-  const tail = text.slice(-Math.floor(limit / 2));
-  return `${head}\n... <truncated> ...\n${tail}`;
+  // Always return full text - no truncation
+  return text;
 }
 
 function buildPrompt(
@@ -62,7 +79,8 @@ function buildPrompt(
   changedFiles: string[],
   relatedFiles: string[],
   changedDiffs: Record<string, string>,
-  relatedFileBodies: Record<string, string>
+  relatedFileBodies: Record<string, string>,
+  commandsDocumentation: string
 ): string {
   const changedList = changedFiles.length
     ? changedFiles.map((p) => `- ${p}`).join('\n')
@@ -92,13 +110,21 @@ function buildPrompt(
     '- Use concise, distinctive text that uniquely identifies UI elements\n' +
     '- Prefer shorter text snippets that are likely to remain stable\n'
   );
+  
+  // Include command documentation if available
+  if (commandsDocumentation) {
+    parts.push('\n## Available Maestro Commands Reference:\n');
+    parts.push(commandsDocumentation);  // No truncation - send complete documentation
+    parts.push('\n');
+  }
+  
   parts.push(`\nUser message:\n${userMessage}\n`);
   parts.push(`\nChanged files (paths):\n${changedList}\n`);
 
   if (Object.keys(changedDiffs).length) {
     parts.push('\nChanged file diffs (for context only):\n');
     for (const [p, diff] of Object.entries(changedDiffs)) {
-      parts.push(`\n# DIFF: ${p}\n` + truncate(diff));
+      parts.push(`\n# DIFF: ${p}\n` + diff);  // No truncation - send complete diff
     }
   }
 
@@ -106,7 +132,7 @@ function buildPrompt(
   if (Object.keys(relatedFileBodies).length) {
     parts.push('\nRelated file contents (for context only):\n');
     for (const [p, body] of Object.entries(relatedFileBodies)) {
-      parts.push(`\n# FILE: ${p}\n` + truncate(body));
+      parts.push(`\n# FILE: ${p}\n` + body);  // No truncation - send complete file content
     }
   }
 
@@ -154,6 +180,7 @@ async function generateOne(
   client: OpenAI,
   model: string,
   grammarText: string,
+  commandsDocumentation: string,
   userMessage: string,
   changedFiles: string[],
   relatedFiles: string[],
@@ -162,7 +189,7 @@ async function generateOne(
   verbosity: 'low' | 'medium' | 'high',
   minimalReasoning: boolean
 ): Promise<string> {
-  const prompt = buildPrompt(userMessage, changedFiles, relatedFiles, changedDiffs, relatedBodies);
+  const prompt = buildPrompt(userMessage, changedFiles, relatedFiles, changedDiffs, relatedBodies, commandsDocumentation);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const body: any = {
       model,
@@ -200,12 +227,13 @@ async function generateOne(
 
 export async function generateUnitTests(params: GenerateUnitTestsParams): Promise<GenerateUnitTestsResult> {
   const grammarText = readGrammar();
+  const commandsDocumentation = readCommandsPrompt();
 
   const {
     userMessage,
     modifiedFiles = [],
     relatedFiles = [],
-    count = 3,
+    count = 1,
     model = DEFAULT_MODEL,
     verbosity = 'low',
     minimalReasoning = false,
@@ -239,6 +267,7 @@ export async function generateUnitTests(params: GenerateUnitTestsParams): Promis
       client,
       model,
       grammarText,
+      commandsDocumentation,
       userMessage,
       changedFilesPaths,
       relatedFiles,

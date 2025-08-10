@@ -1,0 +1,263 @@
+# Maestro Commands Reference for Test Generation
+
+This document contains descriptions of all Maestro commands available for generating automated test cases. These commands are used by the test generator to create Maestro YAML test flows for web, mobile, and cross-platform testing.
+
+## App Control Commands
+
+### launchApp
+Launches the application with the specified appId. Can optionally clear state and keychain data for a fresh start.
+- For web testing: Use appId: "http://localhost:5173" or appropriate URL
+- Options: clearState (removes all app data), clearKeychain (iOS only - clears saved passwords)
+- Can include launch arguments for configuration
+
+### stopApp
+Stops the currently running application (iOS and Web). On Android, use killApp instead.
+
+### killApp
+Terminates the application on Android. Used to test app restart scenarios and state persistence.
+
+### clearState
+Removes all application data for a completely fresh test start. Useful for ensuring tests run in a clean environment.
+
+### clearKeychain
+Clears iOS keychain passwords to ensure clean test states. iOS-specific command for security-related testing.
+
+## Navigation Commands
+
+### tapOn
+Taps on an element identified by text, ID, or other properties. The most commonly used interaction command.
+- Can use text selector: tapOn: "Button Text"
+- Can use ID selector: tapOn: { id: "submit-button" }
+- Can specify coordinates: tapOn: { point: "50%, 50%" }
+
+### doubleTapOn
+Double taps on elements or specific points. Uses the same selectors as tapOn with configurable delay between taps.
+
+### longPressOn
+Performs a long press on elements or points. Useful for triggering context menus or special actions.
+
+### back
+Navigates back (Android only). Simulates the hardware/software back button press.
+
+### scroll
+Scrolls the view in a specified direction (UP, DOWN, LEFT, RIGHT).
+- Can specify distance or duration
+- Works within scrollable containers
+
+### scrollUntilVisible
+Scrolls in a direction until a specified element becomes visible. Useful for finding elements in long lists.
+- Specify direction and target element
+- Can set maximum scroll attempts
+
+### swipe
+Performs swipe gestures in specified directions (UP, DOWN, LEFT, RIGHT).
+- Can specify start and end points
+- Useful for dismissing cards, navigating carousels
+
+## Text Input Commands
+
+### inputText
+Enters text into the currently focused field or a specified element.
+- Can input static text: inputText: "example@email.com"
+- Supports random data generation: inputText: ${maestro.randomEmail}
+- Can specify text field by ID or other selectors
+
+### eraseText
+Removes a specified number of characters from text fields.
+- Specify character count to delete
+- Works backwards from cursor position
+
+### copyTextFrom
+Copies text from an element and stores it in maestro.copiedText variable for later use.
+- Useful for capturing dynamic content
+- Can be used with pasteText command
+
+### pasteText
+Pastes previously copied text (from copyTextFrom) into the currently focused field.
+
+### hideKeyboard
+Hides the virtual keyboard. Note: May be unstable on iOS devices.
+
+## Assertion Commands
+
+### assertVisible
+Confirms that an element is visible on screen. Waits for the element to appear if not immediately visible.
+- Can assert text: assertVisible: "Welcome"
+- Can assert by ID: assertVisible: { id: "welcome-message" }
+- Includes built-in wait mechanism
+
+### assertNotVisible
+Verifies that an element is not visible or has disappeared from the screen.
+- Opposite of assertVisible
+- Useful for confirming loading states have completed
+
+### assertTrue
+Asserts that a JavaScript expression evaluates to true.
+- Can access maestro variables
+- Useful for complex conditional assertions
+
+### assertWithAI
+Uses AI to verify complex UI states that are difficult to assert with traditional selectors.
+- Describe what should be visible in natural language
+- Generates detailed reports
+- Useful for visual regression testing
+
+### assertNoDefectsWithAi
+Experimental AI command that detects UI defects like clipped text, overlapping elements, or layout issues.
+- Automatically scans for common UI problems
+- Generates detailed defect reports
+
+## Wait Commands
+
+### waitForAnimationToEnd
+Waits for all animations to complete before proceeding. Essential for ensuring UI stability.
+
+### extendedWaitUntil
+Waits for elements to appear or disappear with a specified timeout.
+- More flexible than simple assertions
+- Can wait for multiple conditions
+- Configurable timeout period
+
+## Media Commands
+
+### addMedia
+Adds media files (PNG, JPEG, GIF, MP4) to the device's gallery for testing media-related features.
+- Specify file paths relative to test directory
+- Supports multiple files in one command
+
+### takeScreenshot
+Captures a screenshot of the current screen state.
+- Can specify custom filename
+- Useful for visual verification and debugging
+
+### startRecording
+Starts recording the screen during test execution.
+
+### stopRecording
+Stops the current screen recording and saves the video file.
+
+## JavaScript Commands
+
+### evalScript
+Executes inline JavaScript code within the test flow.
+- Can access and modify maestro variables
+- Useful for quick calculations or data transformations
+- Returns values can be stored in variables
+
+### runScript
+Executes an external JavaScript file.
+- Specify script file path
+- More suitable for complex logic
+- Can pass parameters to the script
+
+## Flow Control Commands
+
+### repeat
+Repeats a set of commands a specified number of times.
+- Useful for testing repetitive actions
+- Can include multiple commands in the repeat block
+- Specify iteration count with 'times' parameter
+
+### retry
+Retries commands upon failure with configurable attempts and delays.
+- Specify maximum retry attempts
+- Can set delay between retries
+- Useful for handling flaky elements
+
+### runFlow
+Executes another Maestro flow file within the current flow.
+- Enables modular test design
+- Can pass parameters to sub-flows
+- Useful for reusing common test sequences
+
+## Device Control Commands
+
+### setLocation
+Sets the device's GPS location to specified coordinates.
+- Latitude and longitude parameters
+- Useful for location-based feature testing
+
+### setAirplaneMode
+Explicitly sets airplane mode on or off.
+- Tests offline functionality
+- Network error handling
+
+### toggleAirplaneMode
+Toggles the current airplane mode state.
+
+### pressKey
+Simulates hardware key presses.
+Common keys:
+- HOME: Returns to home screen
+- BACK: Navigate back (Android)
+- ENTER: Submit/confirm action
+- TAB: Move to next field
+- VOLUME_UP/VOLUME_DOWN: Adjust volume
+- LOCK: Lock the device
+
+### openLink
+Opens URLs or deep links in the app or browser.
+- Can open web URLs
+- Supports app deep links
+- Bypasses iOS security prompts
+
+### travel
+Simulates time travel by adjusting the device's date and time.
+- Useful for testing time-based features
+- Can move forward or backward in time
+
+### extractTextWithAI
+Uses AI to extract text from images or elements without accessible IDs.
+- Stores extracted text in variables
+- Useful for OCR-like functionality
+- Can handle complex visual elements
+
+## Best Practices for Test Generation
+
+1. Always start web tests with appropriate appId (e.g., "http://localhost:5173")
+2. Include launchApp after the appId declaration
+3. Use waitForAnimationToEnd after launchApp to ensure the app is ready
+4. Prefer text selectors over IDs when text is unique and stable
+5. Use assertions to verify critical state changes
+6. Include appropriate waits between actions that trigger animations
+7. Use takeScreenshot at key points for visual verification
+8. Group related commands using runFlow for better organization
+9. Use retry for potentially flaky operations
+10. Clear state when tests need isolation
+
+## Command Format Examples
+
+Simple commands (no parameters):
+- launchApp
+- back
+- hideKeyboard
+- waitForAnimationToEnd
+
+Single-line commands with text:
+- tapOn: "Login"
+- assertVisible: "Welcome"
+- inputText: "user@example.com"
+- takeScreenshot: login_success
+
+Mapped commands (with properties):
+- tapOn:
+    id: "submit-button"
+- scroll:
+    direction: DOWN
+    duration: 2000
+- pressKey:
+    key: ENTER
+- runFlow:
+    file: "login-flow.yaml"
+
+Commands with nested structures:
+- repeat:
+    times: 3
+    commands:
+      - tapOn: "Next"
+      - waitForAnimationToEnd
+- retry:
+    maxRetries: 2
+    delay: 1000
+    commands:
+      - assertVisible: "Content Loaded"
