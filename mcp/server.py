@@ -19,11 +19,7 @@ from typing import List, Optional
 import difflib
 from fastmcp import FastMCP
 import json
-
-try:
-    import requests
-except Exception:  # pragma: no cover
-    requests = None  # will error at use-time with friendly message
+import requests
 
 mcp = FastMCP("fastMCP")
 
@@ -305,18 +301,18 @@ def test_modification(
         "relatedFiles": normalized_related_abs,
     }
 
-    if requests is None:
-        return (
-            "HTTP client not available. Install 'requests' in the MCP environment or run: "
-            "pip install -r mcp/requirements.txt"
-        )
-
-    url = build_api_url("/api/generate")
+    url = build_api_url("/api/generate-tests")
+    resp = requests.post(url, json=payload, timeout=20)
+    status = resp.status_code
     try:
-        resp = requests.post(url, json=payload, timeout=20)
-        status = resp.status_code
-        try:
-            data = resp.json()
+        data = resp.json()
+    except Exception:
+        data = {"text": resp.text[:1000]}
+    ack = {
+        "ok": status < 400,
+        "status": status,
+        "response": data,
+    }
     # Construct stdin JSON expected by TestGen/generate_unit_tests.py
     unit_tests_input = {
         "modification": {

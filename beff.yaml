@@ -1,0 +1,27 @@
+# flows/a.yaml
+url: http://localhost:3002
+---
+- launchApp
+
+# Assert stable, unique texts
+- assertVisible: "Image Generation Model Comparison"
+# - assertVisible: "Get Started Free"
+# - tapOn: "Get Started Free"
+- tapOn:
+    id: "prompt" # or any other selector
+- inputText: "a blonde woman"
+- tapOn: "Generate Images"
+# - tapOn:
+#    id: "generate-btn" # or any other selector
+# - assertVisible: "Sign In"
+
+# Features
+# - assertVisible: "Timeline View"
+# - assertVisible: "Smart Tasks"
+# - assertVisible: "Analytics"
+# - assertVisible: "AI Chat"
+
+- takeScreenshot: home-hero
+# - tapOn: "Get Started Free"
+# - waitForAnimationToEnd
+- takeScreenshot: after-cta
