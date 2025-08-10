@@ -417,7 +417,7 @@ app.post('/api/generate-tests', async (req: Request, res: Response) => {
           initialFiles: flowFilePaths,
           maestroBin: MAESTRO_BIN,
           workspace: MAESTRO_WORKSPACE,
-          maxRetries: 5,
+          maxRetries: 2,
           onProgress: push
         });
 

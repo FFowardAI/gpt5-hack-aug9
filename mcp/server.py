@@ -368,8 +368,8 @@ def check_status(job_id: str) -> str:
 @mcp.tool(
     name="give_feedback",
     description=(
-        "Provide feedback on test results with logs, screenshots, user request, and additional context. "
-        "Returns analysis and visual feedback from the test execution."
+        "Analyze test results and provide actionable feedback to Cursor chat. "
+        "Determines if tests passed/failed and provides specific recommendations for fixes or UI improvements."
     ),
 )
 def give_feedback(
@@ -378,7 +378,7 @@ def give_feedback(
     user_request: str,
     context: str = "",
 ) -> str:
-    """Provide feedback on test results with comprehensive analysis.
+    """Analyze test results and provide intelligent feedback for Cursor chat.
     
     Args:
         logs: Test execution logs from the last attempt
@@ -387,10 +387,11 @@ def give_feedback(
         context: Additional context that may be important for analysis
     
     Returns:
-        JSON string with feedback analysis and results
+        JSON string with intelligent analysis and actionable recommendations
     """
     import base64
     import os
+    import re
     
     # Validate inputs
     if not isinstance(logs, str):
@@ -400,7 +401,21 @@ def give_feedback(
     if not isinstance(user_request, str):
         return json.dumps({"ok": False, "error": "user_request must be a string"})
     
-    # Process screenshots - encode them as base64 for embedding
+    # Analyze test results from logs
+    test_failed = False
+    test_passed = False
+    error_details = []
+    
+    # Parse logs for test results
+    if "Flow Passed" in logs or "[Passed]" in logs:
+        test_passed = True
+    if "Flow Failed" in logs or "[Failed]" in logs or "Error" in logs:
+        test_failed = True
+        # Extract error details
+        error_lines = [line for line in logs.split('\n') if 'error' in line.lower() or 'failed' in line.lower()]
+        error_details = error_lines[:3]  # Limit to first 3 error lines
+    
+    # Process screenshots with analysis
     processed_screenshots = []
     for screenshot_path in screenshot_paths:
         if not isinstance(screenshot_path, str):
@@ -424,31 +439,100 @@ def give_feedback(
                     "path": str(screenshot_file),
                     "filename": screenshot_file.name,
                     "base64": base64_image,
-                    "size": len(image_data)
+                    "data": f"data:image/png;base64,{base64_image}",
+                    "size": len(image_data),
+                    "exists": True
+                })
+            else:
+                processed_screenshots.append({
+                    "path": screenshot_path,
+                    "filename": Path(screenshot_path).name,
+                    "exists": False,
+                    "error": "Screenshot file not found"
                 })
         except Exception as e:
             processed_screenshots.append({
                 "path": screenshot_path,
+                "filename": Path(screenshot_path).name if screenshot_path else "unknown",
+                "exists": False,
                 "error": f"Failed to process screenshot: {e}"
             })
     
-    # For now, return a placeholder response as requested
-    newline = '\n'
+    # Generate intelligent feedback based on test results
+    if test_failed:
+        feedback_message = "🔴 TESTS FAILED - ACTION REQUIRED"
+        recommendations = [
+            "❌ Test execution failed. Review the error details below.",
+            "🔧 Check the generated test logic and fix any issues with element selectors or timing.",
+            "🔍 Verify that the UI elements referenced in tests actually exist.",
+            "⚡ Consider adding wait conditions or updating element IDs if they've changed."
+        ]
+        if error_details:
+            recommendations.extend([f"📝 Error: {error}" for error in error_details])
+            
+        action_needed = "Fix the failing tests by addressing the errors above, then re-run the test pipeline."
+        cursor_focus = "Debug and fix test failures"
+        
+    elif test_passed:
+        feedback_message = "✅ TESTS PASSED - UI VALIDATION NEEDED"
+        recommendations = [
+            "🎉 All tests executed successfully!",
+            "👀 Please review the screenshots below to validate the UI meets requirements.",
+            "📋 Check if the implementation matches the original user request.",
+            "🎨 Verify visual design, layout, colors, and user experience.",
+            "🔄 If UI needs improvements, make changes and re-test."
+        ]
+        action_needed = "Review screenshots and validate UI implementation. Make improvements if needed."
+        cursor_focus = "Review screenshots for UI validation and user experience"
+        
+    else:
+        feedback_message = "⚠️ UNCLEAR TEST STATUS"
+        recommendations = [
+            "❓ Test status is unclear from the logs.",
+            "📊 Review the logs and screenshots to determine what happened.",
+            "🔄 Consider re-running the tests if results are inconclusive."
+        ]
+        action_needed = "Investigate test results and re-run if necessary."
+        cursor_focus = "Investigate unclear test results"
+    
+    # Create comprehensive feedback response for Cursor chat
     feedback_response = {
-        "ok": True,
-        "message": "it worked yayyy",
-        "analysis": {
+        "status": "passed" if test_passed else "failed" if test_failed else "unclear",
+        "message": feedback_message,
+        "summary": {
             "user_request": user_request,
-            "logs_summary": f"Processed {len(logs.split(newline))} lines of logs",
-            "screenshots_count": len(processed_screenshots),
-            "context": context or "No additional context provided",
+            "test_passed": test_passed,
+            "test_failed": test_failed,
+            "screenshots_available": len([s for s in processed_screenshots if s.get("exists", False)]),
+            "total_screenshots": len(processed_screenshots),
+            "context": context
         },
+        "recommendations": recommendations,
+        "action_needed": action_needed,
         "screenshots": processed_screenshots,
-        "timestamp": str(Path(__file__).stat().st_mtime),
-        "placeholder": True
+        "logs_analysis": {
+            "total_lines": len(logs.split('\n')),
+            "contains_errors": bool(error_details),
+            "error_details": error_details,
+            "raw_logs": logs
+        },
+        "cursor_instructions": {
+            "next_steps": action_needed,
+            "primary_focus": cursor_focus,
+            "areas_to_review": [
+                "Screenshots for UI validation" if test_passed else "Test failure logs and errors",
+                "Implementation vs user requirements comparison",
+                "Code improvements needed" if test_passed else "Debug and fix test issues"
+            ],
+            "suggested_actions": [
+                "Examine each screenshot carefully" if test_passed else "Fix the test errors listed above",
+                "Compare UI with original user request" if test_passed else "Check element selectors and timing",
+                "Make UI/UX improvements if needed" if test_passed else "Re-run tests after fixes"
+            ]
+        }
     }
     
-    return json.dumps(feedback_response)
+    return json.dumps(feedback_response, indent=2)
 
 
 if __name__ == "__main__":
