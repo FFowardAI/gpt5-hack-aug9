@@ -365,6 +365,92 @@ def check_status(job_id: str) -> str:
     return json.dumps(last_response or {"ok": False, "error": "no status"})
 
 
+@mcp.tool(
+    name="give_feedback",
+    description=(
+        "Provide feedback on test results with logs, screenshots, user request, and additional context. "
+        "Returns analysis and visual feedback from the test execution."
+    ),
+)
+def give_feedback(
+    logs: str,
+    screenshot_paths: list[str],
+    user_request: str,
+    context: str = "",
+) -> str:
+    """Provide feedback on test results with comprehensive analysis.
+    
+    Args:
+        logs: Test execution logs from the last attempt
+        screenshot_paths: List of screenshot file paths taken during testing
+        user_request: Original user request that triggered the test
+        context: Additional context that may be important for analysis
+    
+    Returns:
+        JSON string with feedback analysis and results
+    """
+    import base64
+    import os
+    
+    # Validate inputs
+    if not isinstance(logs, str):
+        return json.dumps({"ok": False, "error": "logs must be a string"})
+    if not isinstance(screenshot_paths, list):
+        return json.dumps({"ok": False, "error": "screenshot_paths must be a list"})
+    if not isinstance(user_request, str):
+        return json.dumps({"ok": False, "error": "user_request must be a string"})
+    
+    # Process screenshots - encode them as base64 for embedding
+    processed_screenshots = []
+    for screenshot_path in screenshot_paths:
+        if not isinstance(screenshot_path, str):
+            continue
+            
+        try:
+            # Convert to absolute path if relative
+            if not os.path.isabs(screenshot_path):
+                # Assume relative to project root
+                repo_root = find_git_root(Path.cwd()) or Path.cwd()
+                screenshot_path = str(repo_root / screenshot_path)
+            
+            screenshot_file = Path(screenshot_path)
+            if screenshot_file.exists():
+                # Read and encode screenshot
+                with open(screenshot_file, "rb") as f:
+                    image_data = f.read()
+                    base64_image = base64.b64encode(image_data).decode('utf-8')
+                    
+                processed_screenshots.append({
+                    "path": str(screenshot_file),
+                    "filename": screenshot_file.name,
+                    "base64": base64_image,
+                    "size": len(image_data)
+                })
+        except Exception as e:
+            processed_screenshots.append({
+                "path": screenshot_path,
+                "error": f"Failed to process screenshot: {e}"
+            })
+    
+    # For now, return a placeholder response as requested
+    newline = '\n'
+    feedback_response = {
+        "ok": True,
+        "message": "it worked yayyy",
+        "analysis": {
+            "user_request": user_request,
+            "logs_summary": f"Processed {len(logs.split(newline))} lines of logs",
+            "screenshots_count": len(processed_screenshots),
+            "context": context or "No additional context provided",
+        },
+        "screenshots": processed_screenshots,
+        "timestamp": str(Path(__file__).stat().st_mtime),
+        "placeholder": True
+    }
+    
+    return json.dumps(feedback_response)
+
+
 if __name__ == "__main__":
     # Run using stdio transport for MCP over process stdio.
     mcp.run(transport="stdio")
